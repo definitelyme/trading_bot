@@ -49,3 +49,52 @@ def test_atr_reduces_position_size(risk_manager):
         portfolio_value=1000.0, confidence=0.80, atr_pct=0.30
     )
     assert size_low_vol > size_high_vol
+
+def test_circuit_breaker_fires_on_7d_drawdown(risk_manager):
+    risk_manager.record_drawdown(amount=210.0, portfolio_value=1000.0, window="7d")
+    assert risk_manager.is_circuit_breaker_active() is True
+
+def test_circuit_breaker_inactive_below_7d_threshold(risk_manager):
+    risk_manager.record_drawdown(amount=100.0, portfolio_value=1000.0, window="7d")
+    assert risk_manager.is_circuit_breaker_active() is False
+
+def test_circuit_breaker_blocks_position_sizing(risk_manager):
+    risk_manager.record_drawdown(amount=110.0, portfolio_value=1000.0, window="24h")
+    assert risk_manager.is_circuit_breaker_active() is True
+    size = risk_manager.calculate_position_size(
+        portfolio_value=1000.0, confidence=0.90, atr_pct=0.20
+    )
+    assert size == 0.0
+
+def test_circuit_breaker_reset(risk_manager):
+    risk_manager.record_drawdown(amount=110.0, portfolio_value=1000.0, window="24h")
+    assert risk_manager.is_circuit_breaker_active() is True
+    risk_manager.reset_circuit_breaker()
+    assert risk_manager.is_circuit_breaker_active() is False
+
+def test_cumulative_drawdown_triggers_breaker(risk_manager):
+    # Multiple small losses that cumulatively exceed 10%
+    risk_manager.record_drawdown(amount=40.0, portfolio_value=1000.0, window="24h")
+    assert risk_manager.is_circuit_breaker_active() is False
+    risk_manager.record_drawdown(amount=40.0, portfolio_value=1000.0, window="24h")
+    assert risk_manager.is_circuit_breaker_active() is False
+    risk_manager.record_drawdown(amount=30.0, portfolio_value=1000.0, window="24h")
+    assert risk_manager.is_circuit_breaker_active() is True
+
+def test_position_size_exactly_at_min_confidence(risk_manager):
+    size = risk_manager.calculate_position_size(
+        portfolio_value=1000.0, confidence=0.65, atr_pct=0.20
+    )
+    assert size > 0.0  # Exactly at threshold should produce a position
+
+def test_position_size_just_below_min_confidence(risk_manager):
+    size = risk_manager.calculate_position_size(
+        portfolio_value=1000.0, confidence=0.6499, atr_pct=0.20
+    )
+    assert size == 0.0
+
+def test_position_size_with_zero_portfolio(risk_manager):
+    size = risk_manager.calculate_position_size(
+        portfolio_value=0.0, confidence=0.90, atr_pct=0.02
+    )
+    assert size == 0.0

@@ -32,6 +32,10 @@ class SignalAggregator:
         if buys and sells:
             return AggregatedSignal("HOLD", 0.0, [s.strategy for s in signals])
 
+        # No actionable signals (all HOLD) → HOLD
+        if not buys and not sells:
+            return AggregatedSignal("HOLD", 0.0, [s.strategy for s in signals])
+
         dominant = buys if buys else sells
         direction = "BUY" if buys else "SELL"
 
