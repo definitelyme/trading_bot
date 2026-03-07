@@ -1,0 +1,15 @@
+services:
+  freqtrade:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./user_data:/freqtrade/user_data
+      - ./.env:/freqtrade/.env
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    command: >
+      freqtrade trade
+      --config user_data/config.live.json
+      --strategy AICryptoStrategy
