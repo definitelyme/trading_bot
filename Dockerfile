@@ -1,7 +1,7 @@
 FROM freqtradeorg/freqtrade:stable
 
 USER root
-RUN pip install xgboost lightgbm torch transformers httpx
+RUN pip install xgboost lightgbm torch transformers httpx datasieve
 USER ftuser
 
 WORKDIR /freqtrade

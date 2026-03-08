@@ -4,8 +4,17 @@ import talib.abstract as ta
 from freqtrade.strategy import IStrategy, DecimalParameter
 from pandas import DataFrame
 
-from .risk.risk_manager import RiskManager
-from .signals.signal_aggregator import SignalAggregator
+import sys
+from pathlib import Path
+
+# Freqtrade loads strategies as standalone files, so we need to add the
+# strategies directory to sys.path for sub-module imports to work.
+_strategies_dir = str(Path(__file__).parent)
+if _strategies_dir not in sys.path:
+    sys.path.insert(0, _strategies_dir)
+
+from risk.risk_manager import RiskManager
+from signals.signal_aggregator import SignalAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -98,13 +107,14 @@ class AICryptoStrategy(IStrategy):
     def set_freqai_targets(self, dataframe: DataFrame, metadata: dict, **kwargs) -> DataFrame:
         """
         Define the target variable for FreqAI to predict.
-        We predict whether price will be higher N candles from now.
+        Predict the percentage price change over the next N candles (continuous).
         """
-        dataframe["&-price_direction"] = (
-            dataframe["close"].shift(-self.freqai_info.get("feature_parameters", {})
-                               .get("label_period_candles", 24))
-            > dataframe["close"]
-        ).astype(int)
+        label_period = self.freqai_info.get("feature_parameters", {}).get(
+            "label_period_candles", 24
+        )
+        dataframe["&-price_change"] = (
+            dataframe["close"].shift(-label_period) - dataframe["close"]
+        ) / dataframe["close"]
         return dataframe
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -113,7 +123,7 @@ class AICryptoStrategy(IStrategy):
         return dataframe
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """Entry signal: FreqAI prediction + confidence threshold."""
+        """Entry signal: predicted price change exceeds threshold."""
         if self._risk_manager.is_circuit_breaker_active():
             logger.warning("Circuit breaker active — no entries allowed")
             dataframe["enter_long"] = 0
@@ -121,7 +131,7 @@ class AICryptoStrategy(IStrategy):
 
         dataframe.loc[
             (
-                (dataframe["&-price_direction_mean"] > self.entry_confidence_threshold.value)
+                (dataframe["&-price_change"] > 0.005)
                 & (dataframe["volume"] > 0)
             ),
             "enter_long",
@@ -130,9 +140,9 @@ class AICryptoStrategy(IStrategy):
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """Exit signal: FreqAI prediction drops below exit threshold."""
+        """Exit signal: predicted price change is negative."""
         dataframe.loc[
-            (dataframe["&-price_direction_mean"] < self.exit_confidence_threshold.value),
+            (dataframe["&-price_change"] < 0),
             "exit_long",
         ] = 1
         return dataframe
