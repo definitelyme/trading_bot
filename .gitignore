@@ -5,7 +5,11 @@ __pycache__/
 user_data/logs/
 logs/
 user_data/data/
+user_data/models/
 *.db
 .venv/
 dist/
 *.egg-info/
+logs.txt
+.DS_Store
+.claude/settings.local.json
