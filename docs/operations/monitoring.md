@@ -48,3 +48,37 @@ With the current config, each trade stakes $190 ($1,000 x 0.95 / 5), deploying $
 ### "No active trades" Is Normal
 
 The bot only enters trades when the ML model predicts >0.5% price increase. In sideways or bearish markets, it may wait hours or even days before finding a signal strong enough to act on.
+
+## Log Rotation
+
+Logs are automatically rotated every 2 hours into daily folders:
+
+```
+logs/
+  freqtrade.log              ← active log (Freqtrade writes here)
+  2026-03-08/
+    2026-03-08_18-00_to_20-00.log
+    2026-03-08_20-00_to_22-00.log
+    ...12 files per day
+  reports/
+    2026-03-08-daily.md      ← auto-generated daily report
+```
+
+### Manual Commands
+
+- **Run rotation now**: `./scripts/rotate-logs.sh`
+- **Generate today's report**: `source .venv/bin/activate && python3 scripts/daily-report.py`
+- **Generate report for a specific date**: `python3 scripts/daily-report.py --date 2026-03-08`
+- **Check cron is running**: `crontab -l`
+- **Check rotation history**: `cat logs/rotation.log`
+
+### Daily Reports
+
+Auto-generated at 23:59. Contains:
+- Portfolio summary (balance, P&L, win rate)
+- Open and closed trades with entry/exit prices
+- Per-pair performance
+- Model metrics (training time, NaN rate, signal counts)
+- Flags (heartbeat gaps, frequent stoploss hits, errors)
+
+Share these reports with Claude to analyze model performance and plan parameter improvements.
