@@ -93,3 +93,42 @@ class PairAllocator:
 
     def get_weight(self, pair: str) -> float:
         return self._weights.get(pair, 0.0)
+
+    def needs_refresh(self) -> bool:
+        if self._last_refresh is None:
+            return True
+        elapsed = datetime.utcnow() - self._last_refresh
+        return elapsed >= timedelta(hours=self.refresh_hours)
+
+    def apply_min_stake_filter(
+        self, total_capital: float, trades_by_pair: dict[str, list[TradeResult]]
+    ) -> dict[str, float]:
+        """Filter out pairs below min_stake and redistribute their weight."""
+        if not self._weights:
+            self.refresh_weights(trades_by_pair)
+
+        filtered = dict(self._weights)
+        changed = True
+
+        while changed:
+            changed = False
+            below = [p for p, w in filtered.items() if 0 < w * total_capital < self.min_stake]
+            if not below:
+                break
+            for pair in below:
+                logger.info(
+                    "Skipping %s: weighted allocation $%.2f < min_stake $%.2f",
+                    pair, filtered[pair] * total_capital, self.min_stake,
+                )
+                filtered[pair] = 0.0
+                changed = True
+
+            # Redistribute to remaining pairs proportionally
+            remaining = {p: w for p, w in filtered.items() if w > 0}
+            if remaining:
+                total_remaining = sum(remaining.values())
+                for pair in remaining:
+                    filtered[pair] = remaining[pair] / total_remaining
+            # Loop again in case redistribution pushed someone else below min
+
+        return filtered
