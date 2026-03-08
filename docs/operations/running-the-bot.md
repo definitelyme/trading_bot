@@ -40,3 +40,15 @@
 Same structure but uses `config.live.json` and no `--dry-run` flag.
 
 **Note**: This file still has the old `freqtrade trade` prefix in the command — it needs updating before live use. See [Going Live](going-live.md).
+
+## Keeping the Bot Running 24/7 (macOS)
+
+Docker pauses when macOS enters system sleep. To prevent this:
+
+1. **System Settings → Battery → Options**
+2. Enable **"Prevent automatic sleeping when the display is off"**
+3. Keep your Mac **plugged in**
+
+The display can dim, lock, or show a screensaver — that's fine. Only full system sleep stops Docker.
+
+This is a temporary setup until the bot is moved to a VPS. The log rotation script detects gaps in heartbeat messages and flags them in the daily report.
