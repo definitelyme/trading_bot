@@ -11,7 +11,7 @@
     "cancel_open_orders_on_exit": false,
     "timeframe": "1h",
     "exchange": {
-        "name": "binance",
+        "name": "bybit",
         "key": "",
         "secret": "",
         "ccxt_config": {},
@@ -20,12 +20,10 @@
             "BTC/USDT",
             "ETH/USDT",
             "SOL/USDT",
-            "BNB/USDT",
+            "AVAX/USDT",
             "XRP/USDT"
         ],
-        "pair_blacklist": [
-            "BNB/.*"
-        ]
+        "pair_blacklist": []
     },
     "pairlists": [
         {
@@ -34,6 +32,7 @@
     ],
     "freqai": {
         "enabled": true,
+        "freqaimodel": "XGBoostRegressor",
         "purge_old_models": 2,
         "train_period_days": 30,
         "backtest_period_days": 7,

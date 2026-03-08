@@ -11,7 +11,7 @@
     "cancel_open_orders_on_exit": false,
     "timeframe": "1h",
     "exchange": {
-        "name": "binance",
+        "name": "bybit",
         "key": "",
         "secret": "",
         "ccxt_config": {},
@@ -20,12 +20,16 @@
             "BTC/USDT",
             "ETH/USDT",
             "SOL/USDT",
-            "BNB/USDT",
-            "XRP/USDT"
+            "AVAX/USDT",
+            "XRP/USDT",
+            "DOGE/USDT",
+            "PEPE/USDT",
+            "SUI/USDT",
+            "WIF/USDT",
+            "NEAR/USDT",
+            "FET/USDT"
         ],
-        "pair_blacklist": [
-            "BNB/.*"
-        ]
+        "pair_blacklist": []
     },
     "pairlists": [
         {
@@ -34,6 +38,7 @@
     ],
     "freqai": {
         "enabled": true,
+        "freqaimodel": "XGBoostRegressor",
         "purge_old_models": 2,
         "train_period_days": 30,
         "backtest_period_days": 7,
@@ -100,11 +105,11 @@
     },
     "api_server": {
         "enabled": true,
-        "listen_ip_address": "127.0.0.1",
+        "listen_ip_address": "0.0.0.0",
         "listen_port": 8080,
         "verbosity": "error",
         "enable_openapi": true,
-        "jwt_secret_key": "change-this-to-a-random-secret",
+        "jwt_secret_key": "cd527ad2c38c39005ec27a4b78644ff3680e84a87b10e2db052b22a51bc6ae59",
         "CORS_origins": [],
         "username": "trader",
         "password": "change-this-password"
