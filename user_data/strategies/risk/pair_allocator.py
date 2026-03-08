@@ -42,3 +42,54 @@ class PairAllocator:
         if gross_losses == 0:
             return self.pf_cap if gross_wins > 0 else 0.0
         return min(gross_wins / gross_losses, self.pf_cap)
+
+    def refresh_weights(self, trades_by_pair: dict[str, list[TradeResult]]) -> None:
+        performance_pairs: dict[str, float] = {}  # pair → profit_factor
+        exploration_pairs: list[str] = []
+
+        for pair in self.pairs:
+            trades = trades_by_pair.get(pair, [])
+            if len(trades) >= self.min_trades:
+                pf = self._compute_profit_factor(trades)
+                if pf >= self.pf_threshold:
+                    performance_pairs[pair] = pf
+                # else: pair has enough trades but PF too low → gets nothing
+            else:
+                exploration_pairs.append(pair)
+
+        self._weights = {}
+
+        # If no performance pairs, everything goes to exploration
+        if not performance_pairs:
+            perf_budget = 0.0
+            explore_budget = 1.0
+        else:
+            perf_budget = 1.0 - self.exploration_pct if exploration_pairs else 1.0
+            explore_budget = self.exploration_pct if exploration_pairs else 0.0
+
+        # Performance pool: weighted by profit factor
+        total_pf = sum(performance_pairs.values())
+        if total_pf > 0:
+            for pair, pf in performance_pairs.items():
+                self._weights[pair] = (pf / total_pf) * perf_budget
+
+        # Exploration pool: equal split
+        if exploration_pairs:
+            per_explore = explore_budget / len(exploration_pairs)
+            for pair in exploration_pairs:
+                self._weights[pair] = per_explore
+
+        # Pairs not in either pool get 0
+        for pair in self.pairs:
+            if pair not in self._weights:
+                self._weights[pair] = 0.0
+
+        self._last_refresh = datetime.utcnow()
+        logger.info(
+            "PairAllocator refreshed: %s (%d in exploration)",
+            ", ".join(f"{p}={w:.3f}" for p, w in sorted(self._weights.items()) if w > 0),
+            len(exploration_pairs),
+        )
+
+    def get_weight(self, pair: str) -> float:
+        return self._weights.get(pair, 0.0)
