@@ -10,4 +10,5 @@ COPY user_data/ /freqtrade/user_data/
 COPY tests/ /freqtrade/tests/
 COPY pyproject.toml /freqtrade/pyproject.toml
 
+ENTRYPOINT []
 CMD ["pytest", "tests/", "-v"]
