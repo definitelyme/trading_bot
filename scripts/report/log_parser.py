@@ -99,7 +99,7 @@ def _parse_signals(lines: list[str]) -> dict:
             continue
 
         # Orders created
-        m = re.search(r"Order dry_run_(?:buy|sell)_(\S+/\S+)", line)
+        m = re.search(r"Order dry_run_(?:buy|sell)_([A-Z]+/[A-Z]+)", line)
         if m:
             orders_created[m.group(1)] += 1
             continue
