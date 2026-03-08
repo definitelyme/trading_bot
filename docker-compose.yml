@@ -5,12 +5,15 @@ services:
     volumes:
       - ./user_data:/freqtrade/user_data
       - ./.env:/freqtrade/.env
+      - ./logs:/freqtrade/user_data/logs
     ports:
       - "8080:8080"
     env_file:
       - .env
     command: >
-      freqtrade trade
+      trade
       --config user_data/config.json
       --strategy AICryptoStrategy
+      --freqaimodel XGBoostRegressor
+      --logfile user_data/logs/freqtrade.log
       --dry-run
