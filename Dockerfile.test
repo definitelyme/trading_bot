@@ -1,0 +1,13 @@
+FROM freqtradeorg/freqtrade:stable
+
+USER root
+RUN pip install xgboost lightgbm torch transformers httpx datasieve pytest pytest-asyncio
+USER ftuser
+
+WORKDIR /freqtrade
+
+COPY user_data/ /freqtrade/user_data/
+COPY tests/ /freqtrade/tests/
+COPY pyproject.toml /freqtrade/pyproject.toml
+
+CMD ["pytest", "tests/", "-v"]
