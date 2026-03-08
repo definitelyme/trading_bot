@@ -20,7 +20,7 @@ Two config files exist: `config.json` (dry-run) and `config.live.json` (live tra
 | `max_open_trades` | `5` | Maximum simultaneous trades |
 | `stake_currency` | `USDT` | Quote currency for all pairs |
 | `stake_amount` | `unlimited` | FreqAI manages sizing |
-| `tradable_balance_ratio` | `0.99` | Fraction of wallet available for trading |
+| `tradable_balance_ratio` | `0.95` | Fraction of wallet available for trading (5% reserve) |
 
 ### Exchange
 
@@ -69,9 +69,14 @@ Two config files exist: `config.json` (dry-run) and `config.live.json` (live tra
 
 | Field | Value | Description |
 |---|---|---|
-| `stoploss` | `-0.05` | -5% stop loss |
+| `stoploss` | `-0.05` | -5% stop loss (max ~$9.50 loss per $190 trade) |
 | `trailing_stop` | `true` | Trailing stop enabled |
-| `minimal_roi` | see strategy | Time-based ROI table |
+| `trailing_stop_positive` | `0.01` | Trail 1% behind peak price |
+| `trailing_stop_positive_offset` | `0.02` | Activate trailing stop after +2% profit |
+| `trailing_only_offset_is_reached` | `true` | Don't trail until offset is reached |
+| `minimal_roi` | time-based | +10% at 0min, +5% at 2h, +2% at 4h, +1% at 8h |
+
+See [Risk Management](../reference/risk-management.md) for a full explanation of how these protect against losses.
 
 ### Telegram
 

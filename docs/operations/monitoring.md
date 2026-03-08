@@ -27,7 +27,23 @@
 - `Bot heartbeat. PID=1, state='RUNNING'` — bot is alive (every 60 seconds)
 - `Starting training BTC/USDT` / `Done training BTC/USDT (20s)` — model training cycle
 - `Total time spent training pairlist Ns` — all models trained
+- `Total time spent inferencing pairlist Ns` — predictions complete for all pairs
+- `dropped N of 1000 prediction data points due to NaNs` — normal if under 20% (101/1000 = 10.1% is typical)
+- `Long signal found: about create a new trade for PAIR` — model predicted >0.5% increase, opening trade
+- `LIMIT_BUY has been fulfilled for Trade(...)` — dry_run order filled at limit price
 - No `ERROR` or `Exception` lines
+
+### Messages You Can Ignore
+
+- `connection rejected (400 Bad Request)` — Web UI WebSocket noise, doesn't affect the bot
+- `Notification 'entry_fill' not sent` — this notification type isn't enabled in config (add `"entry_fill": "on"` to `notification_settings` if you want fill confirmations)
+- `Found open order for Trade(...)` repeated many times — dry_run waiting for simulated limit order to fill at the limit price, will resolve on its own
+
+### First Run Behavior
+
+On the first candle after training completes, the bot may open all `max_open_trades` (5) simultaneously if the model is bullish on multiple pairs. This is normal — the model evaluates all 11 pairs and picks the best opportunities up to the trade limit.
+
+With the current config, each trade stakes $190 ($1,000 x 0.95 / 5), deploying $950 total. The remaining $50 stays in reserve. See [Risk Management](../reference/risk-management.md) for how loss protection works.
 
 ### "No active trades" Is Normal
 
