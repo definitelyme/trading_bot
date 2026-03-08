@@ -6,7 +6,7 @@
 
 ### Regional Restrictions
 
-- **Binance** — banned in Nigeria (DNS blocked at ISP level, API inaccessible)
+- **Binance** — banned in Nigeria (DNS blocked at ISP level, API inaccessible). But available in Germany
 - **OKX** — has exited the Nigerian market
 - **Bybit** — works fully from Nigeria
 
