@@ -51,12 +51,12 @@ fi
 echo ""
 echo "[3/4] Installing cron jobs..."
 
-ROTATE_ENTRY="0 */2 * * * $PROJECT_DIR/scripts/rotate-logs.sh >> $PROJECT_DIR/logs/rotation.log 2>&1"
+ROTATE_ENTRY="0 */2 * * * $VENV_PYTHON $PROJECT_DIR/scripts/two-hour-report.py >> $PROJECT_DIR/logs/rotation.log 2>&1"
 REPORT_ENTRY="59 23 * * * $VENV_PYTHON $PROJECT_DIR/scripts/daily-report.py >> $PROJECT_DIR/logs/rotation.log 2>&1"
 
 EXISTING=$(crontab -l 2>/dev/null || true)
 
-if echo "$EXISTING" | grep -q "rotate-logs.sh"; then
+if echo "$EXISTING" | grep -q "two-hour-report.py"; then
     echo "  ✓ Log rotation cron already installed"
 else
     echo "$EXISTING" | { cat; echo "$ROTATE_ENTRY"; } | crontab -
@@ -81,7 +81,7 @@ echo "  Docker:"
 docker compose ps --format '  {{.Name}}: {{.Status}}'
 echo ""
 echo "  Cron jobs:"
-crontab -l 2>/dev/null | grep -E "(rotate-logs|daily-report)" | while read -r line; do
+crontab -l 2>/dev/null | grep -E "(two-hour-report|daily-report)" | while read -r line; do
     echo "  $line"
 done
 echo ""
@@ -93,10 +93,10 @@ echo "=== Setup complete ==="
 echo ""
 echo "What happens now:"
 echo "  • Freqtrade writes to logs/freqtrade.log"
-echo "  • Every 2 hours: log rotated to logs/YYYY-MM-DD/ folder"
+echo "  • Every 2 hours: log rotated + analytical report saved to logs/YYYY-MM-DD/"
 echo "  • At 23:59 daily: performance report saved to logs/reports/"
 echo ""
 echo "Manual commands:"
 echo "  • Generate report now:  source .venv/bin/activate && python3 scripts/daily-report.py"
-echo "  • Rotate logs now:      ./scripts/rotate-logs.sh"
+echo "  • Rotate + report now:  source .venv/bin/activate && python3 scripts/two-hour-report.py"
 echo "  • Check bot logs:       docker compose logs --tail 20"

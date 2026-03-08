@@ -1,7 +1,7 @@
 {
     "trading_mode": "spot",
     "margin_mode": "",
-    "max_open_trades": 5,
+    "max_open_trades": 11,
     "stake_currency": "USDT",
     "stake_amount": "unlimited",
     "tradable_balance_ratio": 0.95,

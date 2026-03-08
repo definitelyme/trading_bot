@@ -1,6 +1,9 @@
 import logging
 import os
+import pandas as pd
 import talib.abstract as ta
+from datetime import datetime, timedelta
+from freqtrade.persistence import Trade
 from freqtrade.strategy import IStrategy, DecimalParameter
 from pandas import DataFrame
 
@@ -14,6 +17,7 @@ if _strategies_dir not in sys.path:
     sys.path.insert(0, _strategies_dir)
 
 from risk.risk_manager import RiskManager
+from risk.pair_allocator import PairAllocator, TradeResult
 from signals.signal_aggregator import SignalAggregator
 
 logger = logging.getLogger(__name__)
@@ -57,6 +61,109 @@ class AICryptoStrategy(IStrategy):
         self._aggregator = SignalAggregator(
             min_confidence=float(os.getenv("MIN_SIGNAL_CONFIDENCE", "0.65"))
         )
+        pairs = config.get("exchange", {}).get("pair_whitelist", [])
+        self._pair_allocator = PairAllocator(
+            pairs=pairs,
+            window_days=int(os.getenv("PAIR_ALLOC_WINDOW_DAYS", "30")),
+            min_trades=int(os.getenv("PAIR_ALLOC_MIN_TRADES", "5")),
+            exploration_pct=float(os.getenv("PAIR_ALLOC_EXPLORATION_PCT", "0.10")),
+            pf_threshold=float(os.getenv("PAIR_ALLOC_PF_THRESHOLD", "0.7")),
+            pf_cap=float(os.getenv("PAIR_ALLOC_PF_CAP", "5.0")),
+            min_stake=float(os.getenv("PAIR_ALLOC_MIN_STAKE", "10.0")),
+            refresh_hours=int(os.getenv("PAIR_ALLOC_REFRESH_HOURS", "4")),
+        )
+
+    def _refresh_allocator(self) -> None:
+        cutoff = datetime.utcnow() - timedelta(days=self._pair_allocator.window_days)
+        trades_by_pair: dict[str, list[TradeResult]] = {}
+        for pair in self._pair_allocator.pairs:
+            raw_trades = Trade.get_trades_proxy(pair=pair, is_open=False)
+            trades_by_pair[pair] = [
+                TradeResult(profit_abs=t.close_profit_abs, close_date=t.close_date)
+                for t in raw_trades
+                if t.close_date and t.close_date >= cutoff
+            ]
+        self._pair_allocator.refresh_weights(trades_by_pair)
+
+    def _get_total_portfolio_value(self) -> float:
+        free = self.wallets.get_free(self.config.get("stake_currency", "USDT"))
+        deployed = sum(
+            t.stake_amount for t in Trade.get_trades_proxy(is_open=True)
+        )
+        return free + deployed
+
+    def _get_model_confidence(self, pair: str) -> float:
+        df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
+        if df.empty or "&-price_change" not in df.columns:
+            return 0.0
+        val = df["&-price_change"].iloc[-1]
+        return abs(val) if not pd.isna(val) else 0.0
+
+    def _get_current_atr_pct(self, pair: str) -> float:
+        df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
+        if df.empty:
+            return 0.05  # conservative default
+        atr_cols = [c for c in df.columns if c.startswith("%-atr-")]
+        if not atr_cols:
+            return 0.05
+        atr_val = df[atr_cols[0]].iloc[-1]
+        close_val = df["close"].iloc[-1]
+        if pd.isna(atr_val) or pd.isna(close_val) or close_val == 0:
+            return 0.05
+        return atr_val / close_val
+
+    def custom_stake_amount(
+        self,
+        pair: str,
+        current_time: datetime,
+        current_rate: float,
+        proposed_stake: float,
+        min_stake: float | None,
+        max_stake: float,
+        leverage: float,
+        entry_tag: str | None,
+        side: str,
+        **kwargs,
+    ) -> float:
+        if self._pair_allocator.needs_refresh():
+            self._refresh_allocator()
+
+        weight = self._pair_allocator.get_weight(pair)
+        if weight <= 0:
+            return 0
+
+        total_portfolio = self._get_total_portfolio_value()
+        base_stake = total_portfolio * weight
+
+        # Cap with RiskManager (Half-Kelly + ATR)
+        confidence = self._get_model_confidence(pair)
+        atr_pct = self._get_current_atr_pct(pair)
+        risk_cap = self._risk_manager.calculate_position_size(
+            portfolio_value=total_portfolio,
+            confidence=confidence,
+            atr_pct=atr_pct,
+        )
+        if risk_cap > 0:
+            base_stake = min(base_stake, risk_cap)
+
+        # Enforce exchange minimum
+        effective_min = min_stake or 0
+        if base_stake < effective_min:
+            logger.info(
+                "Skipping %s: stake $%.2f < exchange min $%.2f",
+                pair, base_stake, effective_min,
+            )
+            return 0
+
+        # Cap by available balance and max_stake
+        available = self.wallets.get_available_stake_amount()
+        final_stake = min(base_stake, available, max_stake)
+
+        logger.info(
+            "Allocating %s: weight=%.3f, base=$%.2f, risk_cap=$%.2f, final=$%.2f",
+            pair, weight, total_portfolio * weight, risk_cap, final_stake,
+        )
+        return final_stake
 
     def feature_engineering_expand_all(
         self, dataframe: DataFrame, period: int, metadata: dict, **kwargs

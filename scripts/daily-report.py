@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+from requests.auth import HTTPBasicAuth
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 LOGS_DIR = PROJECT_DIR / "logs"
@@ -32,22 +33,16 @@ def load_config():
     }
 
 
-def get_api_token(creds):
-    """Authenticate and get JWT token."""
-    resp = requests.post(
-        f"{API_BASE}/token/login",
-        json=creds,
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+def get_auth(creds):
+    """Return HTTP Basic Auth for Freqtrade API (2026.2+)."""
+    return HTTPBasicAuth(creds["username"], creds["password"])
 
 
-def api_get(endpoint, token):
+def api_get(endpoint, auth):
     """Make authenticated GET request to Freqtrade API."""
     resp = requests.get(
         f"{API_BASE}{endpoint}",
-        headers={"Authorization": f"Bearer {token}"},
+        auth=auth,
         timeout=10,
     )
     resp.raise_for_status()
@@ -130,15 +125,15 @@ def parse_logs(date_str):
     return metrics
 
 
-def generate_report(date_str, token):
+def generate_report(date_str, auth):
     """Generate the daily markdown report."""
     # Query API
     try:
-        profit = api_get("/profit", token)
-        trades = api_get("/trades?limit=100", token)
-        performance = api_get("/performance", token)
-        balance = api_get("/balance", token)
-        status = api_get("/status", token)
+        profit = api_get("/profit", auth)
+        trades = api_get("/trades?limit=100", auth)
+        performance = api_get("/performance", auth)
+        balance = api_get("/balance", auth)
+        status = api_get("/status", auth)
     except requests.RequestException as e:
         return f"# Daily Report — {date_str}\n\nAPI Error: {e}\n"
 
@@ -268,7 +263,9 @@ def main():
     # Authenticate
     try:
         creds = load_config()
-        token = get_api_token(creds)
+        auth = get_auth(creds)
+        # Verify connectivity
+        requests.get(f"{API_BASE}/ping", auth=auth, timeout=10).raise_for_status()
     except FileNotFoundError:
         print(f"Error: Config file not found at {CONFIG_FILE}", file=sys.stderr)
         sys.exit(1)
@@ -278,7 +275,7 @@ def main():
         sys.exit(1)
 
     # Generate report
-    report = generate_report(args.date, token)
+    report = generate_report(args.date, auth)
 
     # Save
     report_dir = LOGS_DIR / "reports"
