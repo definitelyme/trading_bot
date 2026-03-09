@@ -645,3 +645,47 @@ class TestRateLimiting:
                 current_time=datetime.utcnow(), entry_tag=None, side="long",
             )
         assert result is True
+
+
+class TestExitSignals:
+    """Tests for populate_exit_trend threshold."""
+
+    def test_exit_requires_minus_0_5_pct_threshold(self):
+        """Small negative predictions should NOT trigger exit."""
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({
+            "&-price_change": [-0.001, -0.003, -0.004],
+            "volume": [1000, 1000, 1000],
+        })
+        result = strategy.populate_exit_trend(df, {"pair": "BTC/USDT"})
+        assert result["exit_long"].sum() == 0
+
+    def test_exit_triggers_on_significant_negative(self):
+        """Predictions below -0.5% should trigger exit."""
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({
+            "&-price_change": [-0.001, -0.010, -0.020],
+            "volume": [1000, 1000, 1000],
+        })
+        result = strategy.populate_exit_trend(df, {"pair": "BTC/USDT"})
+        assert result["exit_long"].sum() == 2
+
+    def test_exit_not_triggered_by_positive_prediction(self):
+        """Positive predictions should never trigger exit."""
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({
+            "&-price_change": [0.01, 0.02, 0.05],
+            "volume": [1000, 1000, 1000],
+        })
+        result = strategy.populate_exit_trend(df, {"pair": "BTC/USDT"})
+        assert result["exit_long"].sum() == 0
+
+    def test_exit_blocked_by_zero_volume(self):
+        """Zero volume should not trigger exit."""
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({
+            "&-price_change": [-0.020],
+            "volume": [0],
+        })
+        result = strategy.populate_exit_trend(df, {"pair": "BTC/USDT"})
+        assert result["exit_long"].sum() == 0

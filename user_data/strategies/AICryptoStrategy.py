@@ -343,9 +343,12 @@ class AICryptoStrategy(IStrategy):
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """Exit signal: predicted price change is negative."""
+        """Exit signal: predicted price change is significantly negative."""
         dataframe.loc[
-            (dataframe["&-price_change"] < 0),
+            (
+                (dataframe["&-price_change"] < -0.005)
+                & (dataframe["volume"] > 0)
+            ),
             "exit_long",
         ] = 1
         return dataframe
