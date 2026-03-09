@@ -7,13 +7,14 @@ def risk_manager():
         max_portfolio_pct=0.05,
         drawdown_24h_limit=0.10,
         drawdown_7d_limit=0.20,
-        min_confidence=0.65,
+        min_confidence=0.55,
+        kelly_fraction=0.25,
     )
 
 def test_position_size_scales_with_confidence(risk_manager):
     # Use high ATR so raw sizes stay below the 5% cap
     size_low = risk_manager.calculate_position_size(
-        portfolio_value=1000.0, confidence=0.65, atr_pct=0.20
+        portfolio_value=1000.0, confidence=0.55, atr_pct=0.20
     )
     size_high = risk_manager.calculate_position_size(
         portfolio_value=1000.0, confidence=0.90, atr_pct=0.20
@@ -28,7 +29,7 @@ def test_position_size_never_exceeds_max_pct(risk_manager):
 
 def test_position_size_zero_below_min_confidence(risk_manager):
     size = risk_manager.calculate_position_size(
-        portfolio_value=1000.0, confidence=0.50, atr_pct=0.02
+        portfolio_value=1000.0, confidence=0.40, atr_pct=0.02
     )
     assert size == 0.0
 
@@ -83,13 +84,13 @@ def test_cumulative_drawdown_triggers_breaker(risk_manager):
 
 def test_position_size_exactly_at_min_confidence(risk_manager):
     size = risk_manager.calculate_position_size(
-        portfolio_value=1000.0, confidence=0.65, atr_pct=0.20
+        portfolio_value=1000.0, confidence=0.55, atr_pct=0.20
     )
     assert size > 0.0  # Exactly at threshold should produce a position
 
 def test_position_size_just_below_min_confidence(risk_manager):
     size = risk_manager.calculate_position_size(
-        portfolio_value=1000.0, confidence=0.6499, atr_pct=0.20
+        portfolio_value=1000.0, confidence=0.5499, atr_pct=0.20
     )
     assert size == 0.0
 
@@ -98,3 +99,37 @@ def test_position_size_with_zero_portfolio(risk_manager):
         portfolio_value=0.0, confidence=0.90, atr_pct=0.02
     )
     assert size == 0.0
+
+
+def test_quarter_kelly_smaller_than_half_kelly():
+    """Quarter-Kelly should produce smaller positions than half-Kelly."""
+    quarter = RiskManager(kelly_fraction=0.25, min_confidence=0.55)
+    half = RiskManager(kelly_fraction=0.50, min_confidence=0.55)
+    size_q = quarter.calculate_position_size(
+        portfolio_value=1000.0, confidence=0.80, atr_pct=0.15
+    )
+    size_h = half.calculate_position_size(
+        portfolio_value=1000.0, confidence=0.80, atr_pct=0.15
+    )
+    assert size_q < size_h
+    assert size_q > 0
+
+
+def test_quarter_kelly_exact_calculation():
+    """Verify quarter-Kelly formula: edge * 0.25 * volatility_scalar."""
+    rm = RiskManager(kelly_fraction=0.25, min_confidence=0.55, max_portfolio_pct=1.0)
+    # confidence=0.80 → edge = 0.80 - 0.20 = 0.60
+    # kelly_bet = 0.60 * 0.25 = 0.15
+    # atr_pct=0.02 → volatility_scalar = min(1.0, 0.02/0.02) = 1.0
+    # raw_size = 1000 * 0.15 * 1.0 = 150
+    size = rm.calculate_position_size(
+        portfolio_value=1000.0, confidence=0.80, atr_pct=0.02
+    )
+    assert size == 150.0
+
+
+def test_default_min_confidence_is_055():
+    """Default min_confidence should be 0.55 (percentile-rank scale)."""
+    rm = RiskManager()
+    assert rm.min_confidence == 0.55
+    assert rm.kelly_fraction == 0.25

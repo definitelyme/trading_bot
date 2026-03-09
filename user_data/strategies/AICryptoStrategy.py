@@ -56,10 +56,10 @@ class AICryptoStrategy(IStrategy):
             max_portfolio_pct=float(os.getenv("MAX_PORTFOLIO_PCT_PER_TRADE", "0.05")),
             drawdown_24h_limit=float(os.getenv("CIRCUIT_BREAKER_24H_DRAWDOWN", "0.10")),
             drawdown_7d_limit=float(os.getenv("CIRCUIT_BREAKER_7D_DRAWDOWN", "0.20")),
-            min_confidence=float(os.getenv("MIN_SIGNAL_CONFIDENCE", "0.65")),
+            min_confidence=float(os.getenv("MIN_SIGNAL_CONFIDENCE", "0.55")),
         )
         self._aggregator = SignalAggregator(
-            min_confidence=float(os.getenv("MIN_SIGNAL_CONFIDENCE", "0.65"))
+            min_confidence=float(os.getenv("MIN_SIGNAL_CONFIDENCE", "0.55"))
         )
         pairs = config.get("exchange", {}).get("pair_whitelist", [])
         self._pair_allocator = PairAllocator(
@@ -93,11 +93,18 @@ class AICryptoStrategy(IStrategy):
         return free + deployed
 
     def _get_model_confidence(self, pair: str) -> float:
+        """Convert raw prediction to 0-1 confidence via percentile rank."""
         df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
         if df.empty or "&-price_change" not in df.columns:
             return 0.0
-        val = df["&-price_change"].iloc[-1]
-        return abs(val) if not pd.isna(val) else 0.0
+        predictions = df["&-price_change"].dropna()
+        if len(predictions) < 10:
+            return 0.0
+        current = predictions.iloc[-1]
+        abs_preds = predictions.abs()
+        current_abs = abs(current)
+        rank = (abs_preds < current_abs).sum() / len(abs_preds)
+        return round(rank, 4)
 
     def _get_current_atr_pct(self, pair: str) -> float:
         df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
@@ -135,7 +142,7 @@ class AICryptoStrategy(IStrategy):
         total_portfolio = self._get_total_portfolio_value()
         base_stake = total_portfolio * weight
 
-        # Cap with RiskManager (Half-Kelly + ATR)
+        # Cap with RiskManager (Quarter-Kelly + ATR)
         confidence = self._get_model_confidence(pair)
         atr_pct = self._get_current_atr_pct(pair)
         risk_cap = self._risk_manager.calculate_position_size(
@@ -145,6 +152,11 @@ class AICryptoStrategy(IStrategy):
         )
         if risk_cap > 0:
             base_stake = min(base_stake, risk_cap)
+        else:
+            logger.info(
+                "Skipping %s: risk_cap=$0 (low confidence=%.4f)", pair, confidence
+            )
+            return 0
 
         # Enforce exchange minimum
         effective_min = min_stake or 0

@@ -9,7 +9,8 @@ class RiskManager:
     max_portfolio_pct: float = 0.05
     drawdown_24h_limit: float = 0.10
     drawdown_7d_limit: float = 0.20
-    min_confidence: float = 0.65
+    min_confidence: float = 0.55
+    kelly_fraction: float = 0.25
 
     _drawdown_24h: float = field(default=0.0, init=False)
     _drawdown_7d: float = field(default=0.0, init=False)
@@ -22,7 +23,7 @@ class RiskManager:
         atr_pct: float,
     ) -> float:
         """
-        Half-Kelly position sizing adjusted for ATR volatility.
+        Quarter-Kelly position sizing adjusted for ATR volatility.
         Returns 0.0 if confidence below minimum threshold.
         """
         if confidence < self.min_confidence:
@@ -32,15 +33,15 @@ class RiskManager:
             logger.warning("Circuit breaker active — position size forced to 0")
             return 0.0
 
-        # Half-Kelly: f* = (confidence - (1 - confidence)) / 1.0 * 0.5
+        # Fractional Kelly: f* = (confidence - (1 - confidence)) * kelly_fraction
         edge = confidence - (1.0 - confidence)
-        half_kelly_fraction = max(0.0, edge * 0.5)
+        kelly_bet = max(0.0, edge * self.kelly_fraction)
 
         # ATR adjustment: reduce size when volatility is high
         # Target 1% portfolio risk per trade; atr_pct is current volatility
         volatility_scalar = min(1.0, 0.02 / max(atr_pct, 0.001))
 
-        raw_size = portfolio_value * half_kelly_fraction * volatility_scalar
+        raw_size = portfolio_value * kelly_bet * volatility_scalar
         capped_size = min(raw_size, portfolio_value * self.max_portfolio_pct)
 
         return round(capped_size, 2)

@@ -164,7 +164,7 @@ class TestCustomStakeAmount:
         """Should auto-refresh allocator when weights are stale."""
         strategy = _make_strategy_with_mocks()
         # Don't set weights — allocator needs refresh
-        strategy._get_model_confidence = MagicMock(return_value=0.5)
+        strategy._get_model_confidence = MagicMock(return_value=0.7)
         strategy._get_current_atr_pct = MagicMock(return_value=0.02)
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
@@ -183,3 +183,229 @@ class TestCustomStakeAmount:
         # After refresh with no trade history, cold start gives equal weights
         # 1/3 * 900 = 300 (but may be capped by risk manager)
         assert stake >= 0  # should not crash
+
+    def test_returns_zero_when_risk_cap_is_zero(self):
+        """When risk manager returns 0 (low confidence), custom_stake_amount
+        should return 0 instead of bypassing the cap."""
+        strategy = _make_strategy_with_mocks()
+        strategy._pair_allocator._weights = {
+            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
+        }
+        strategy._pair_allocator._last_refresh = datetime.utcnow()
+        # Low confidence → risk_cap = 0
+        strategy._get_model_confidence = MagicMock(return_value=0.3)
+        strategy._get_current_atr_pct = MagicMock(return_value=0.02)
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake = strategy.custom_stake_amount(
+                pair="BTC/USDT",
+                current_time=datetime.utcnow(),
+                current_rate=50000.0,
+                proposed_stake=100.0,
+                min_stake=5.0,
+                max_stake=500.0,
+                leverage=1.0,
+                entry_tag=None,
+                side="long",
+            )
+        assert stake == 0
+
+
+class TestModelConfidence:
+    """Tests for the percentile-rank confidence normalization."""
+
+    def test_returns_zero_for_empty_dataframe(self):
+        strategy = _make_strategy_with_mocks()
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame()
+        assert strategy._get_model_confidence("BTC/USDT") == 0.0
+
+    def test_returns_zero_for_missing_column(self):
+        strategy = _make_strategy_with_mocks()
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({"close": [1, 2]})
+        assert strategy._get_model_confidence("BTC/USDT") == 0.0
+
+    def test_returns_zero_for_insufficient_predictions(self):
+        strategy = _make_strategy_with_mocks()
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": [0.01] * 5  # only 5, need at least 10
+        })
+        assert strategy._get_model_confidence("BTC/USDT") == 0.0
+
+    def test_percentile_rank_high_prediction(self):
+        """A prediction at the extreme should have high confidence."""
+        strategy = _make_strategy_with_mocks()
+        preds = [0.001] * 99 + [0.05]  # last one is an outlier
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds
+        })
+        confidence = strategy._get_model_confidence("BTC/USDT")
+        assert confidence >= 0.9
+
+    def test_percentile_rank_median_prediction(self):
+        """A prediction near the median should have ~0.5 confidence."""
+        strategy = _make_strategy_with_mocks()
+        # Place a mid-range value at the end (iloc[-1])
+        base = list(np.linspace(0.001, 0.05, 99))
+        median_val = np.median(np.abs(base))
+        preds = base + [median_val]
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds
+        })
+        confidence = strategy._get_model_confidence("BTC/USDT")
+        assert 0.4 <= confidence <= 0.6
+
+    def test_negative_prediction_uses_absolute_value(self):
+        """Negative predictions should use abs() for ranking."""
+        strategy = _make_strategy_with_mocks()
+        preds = [0.001] * 99 + [-0.05]  # large negative prediction
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds
+        })
+        confidence = strategy._get_model_confidence("BTC/USDT")
+        assert confidence >= 0.9
+
+    def test_confidence_returns_value_between_0_and_1(self):
+        """Confidence should always be in [0, 1] range."""
+        strategy = _make_strategy_with_mocks()
+        preds = list(np.random.uniform(-0.05, 0.05, 200))
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds
+        })
+        confidence = strategy._get_model_confidence("BTC/USDT")
+        assert 0.0 <= confidence <= 1.0
+
+
+class TestIntegrationConfidenceToStake:
+    """Integration tests: full pipeline from prediction → confidence → risk → stake."""
+
+    def test_high_prediction_produces_nonzero_stake(self):
+        """Strong prediction → high confidence → risk cap > 0 → positive stake."""
+        strategy = _make_strategy_with_mocks()
+        strategy._pair_allocator._weights = {
+            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
+        }
+        strategy._pair_allocator._last_refresh = datetime.utcnow()
+
+        # Simulate predictions where last one is extreme (high confidence)
+        preds = [0.001] * 99 + [0.04]
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+            "close": [50000.0] * 100,
+            "%-atr-period_10_1h": [500.0] * 100,  # 1% ATR
+        })
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake = strategy.custom_stake_amount(
+                pair="BTC/USDT",
+                current_time=datetime.utcnow(),
+                current_rate=50000.0,
+                proposed_stake=100.0,
+                min_stake=5.0,
+                max_stake=500.0,
+                leverage=1.0,
+                entry_tag=None,
+                side="long",
+            )
+        assert stake > 0
+        assert stake <= 500.0
+
+    def test_weak_prediction_produces_zero_stake(self):
+        """Weak prediction → low confidence → risk cap = 0 → stake = 0."""
+        strategy = _make_strategy_with_mocks()
+        strategy._pair_allocator._weights = {
+            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
+        }
+        strategy._pair_allocator._last_refresh = datetime.utcnow()
+
+        # All predictions identical → current is at 0th percentile
+        preds = [0.01] * 100
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+            "close": [50000.0] * 100,
+            "%-atr-period_10_1h": [500.0] * 100,
+        })
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake = strategy.custom_stake_amount(
+                pair="BTC/USDT",
+                current_time=datetime.utcnow(),
+                current_rate=50000.0,
+                proposed_stake=100.0,
+                min_stake=5.0,
+                max_stake=500.0,
+                leverage=1.0,
+                entry_tag=None,
+                side="long",
+            )
+        assert stake == 0
+
+    def test_risk_cap_bounds_weight_based_allocation(self):
+        """Risk cap from quarter-Kelly should be tighter than weight-based."""
+        strategy = _make_strategy_with_mocks()
+        strategy._pair_allocator._weights = {
+            "BTC/USDT": 0.90, "ETH/USDT": 0.05, "SOL/USDT": 0.05
+        }
+        strategy._pair_allocator._last_refresh = datetime.utcnow()
+
+        # Moderate prediction → moderate confidence → smaller risk cap
+        preds = list(np.linspace(0.001, 0.05, 99)) + [0.03]
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+            "close": [50000.0] * 100,
+            "%-atr-period_10_1h": [500.0] * 100,
+        })
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake = strategy.custom_stake_amount(
+                pair="BTC/USDT",
+                current_time=datetime.utcnow(),
+                current_rate=50000.0,
+                proposed_stake=100.0,
+                min_stake=5.0,
+                max_stake=500.0,
+                leverage=1.0,
+                entry_tag=None,
+                side="long",
+            )
+        # Weight-based: 900 * 0.90 = 810, but risk cap should be lower
+        assert stake > 0
+        weight_based = 900 * 0.90
+        assert stake < weight_based
+
+    def test_circuit_breaker_blocks_entire_pipeline(self):
+        """Circuit breaker active → risk_cap = 0 → stake = 0."""
+        strategy = _make_strategy_with_mocks()
+        strategy._pair_allocator._weights = {
+            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
+        }
+        strategy._pair_allocator._last_refresh = datetime.utcnow()
+        # Trigger circuit breaker
+        strategy._risk_manager.record_drawdown(
+            amount=150.0, portfolio_value=1000.0, window="24h"
+        )
+
+        preds = [0.001] * 99 + [0.04]
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+            "close": [50000.0] * 100,
+            "%-atr-period_10_1h": [500.0] * 100,
+        })
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake = strategy.custom_stake_amount(
+                pair="BTC/USDT",
+                current_time=datetime.utcnow(),
+                current_rate=50000.0,
+                proposed_stake=100.0,
+                min_stake=5.0,
+                max_stake=500.0,
+                leverage=1.0,
+                entry_tag=None,
+                side="long",
+            )
+        assert stake == 0
