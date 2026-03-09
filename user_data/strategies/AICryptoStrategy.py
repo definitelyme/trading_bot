@@ -70,6 +70,9 @@ class AICryptoStrategy(IStrategy):
             enabled=os.getenv("NEWS_SENTIMENT_ENABLED", "false").lower() == "true",
             api_key=os.getenv("CRYPTOPANIC_API_KEY", ""),
         )
+        self._bot_start_time: datetime | None = None
+        self._max_entries_per_hour = int(os.getenv("MAX_ENTRIES_PER_HOUR", "3"))
+        self._startup_cooldown_hours = int(os.getenv("STARTUP_COOLDOWN_HOURS", "2"))
         pairs = config.get("exchange", {}).get("pair_whitelist", [])
         self._pair_allocator = PairAllocator(
             pairs=pairs,
@@ -198,7 +201,35 @@ class AICryptoStrategy(IStrategy):
         side: str,
         **kwargs,
     ) -> bool:
-        """Gate entries through the signal aggregator."""
+        """Gate entries through rate limiting and signal aggregation."""
+        # Track bot start time
+        if self._bot_start_time is None:
+            self._bot_start_time = current_time
+
+        # Startup cooldown: limit entries during initial ramp-up
+        hours_since_start = (current_time - self._bot_start_time).total_seconds() / 3600
+        if hours_since_start < self._startup_cooldown_hours:
+            open_count = len(Trade.get_trades_proxy(is_open=True))
+            if open_count >= self._max_entries_per_hour:
+                logger.info(
+                    "Startup cooldown: %d open trades >= limit %d, skipping %s",
+                    open_count, self._max_entries_per_hour, pair,
+                )
+                return False
+
+        # Rate limit: max N new entries per hour
+        open_trades = Trade.get_trades_proxy(is_open=True)
+        recent_entries = [
+            t for t in open_trades
+            if t.open_date and (current_time - t.open_date).total_seconds() < 3600
+        ]
+        if len(recent_entries) >= self._max_entries_per_hour:
+            logger.info(
+                "Rate limit: %d entries in last hour >= limit %d, skipping %s",
+                len(recent_entries), self._max_entries_per_hour, pair,
+            )
+            return False
+
         confidence = self._get_model_confidence(pair)
         ml_signal = Signal(
             direction="BUY", confidence=confidence, strategy="freqai_ml"
