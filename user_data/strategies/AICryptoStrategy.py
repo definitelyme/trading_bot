@@ -250,7 +250,8 @@ class AICryptoStrategy(IStrategy):
 
         dataframe.loc[
             (
-                (dataframe["&-price_change"] > 0.005)
+                (dataframe["&-price_change"] > 0.015)
+                & (dataframe["do_predict"] == 1)
                 & (dataframe["volume"] > 0)
             ),
             "enter_long",

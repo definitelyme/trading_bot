@@ -408,4 +408,75 @@ class TestIntegrationConfidenceToStake:
                 entry_tag=None,
                 side="long",
             )
-        assert stake == 0
+        assert stake == 0  # circuit breaker blocks everything
+
+
+class TestEntrySignals:
+    """Tests for populate_entry_trend thresholds and filters."""
+
+    def _make_entry_df(self, price_change, do_predict=1, volume=1000):
+        """Build a minimal dataframe for entry signal testing."""
+        if not isinstance(price_change, list):
+            price_change = [price_change]
+        n = len(price_change)
+        if not isinstance(do_predict, list):
+            do_predict = [do_predict] * n
+        if not isinstance(volume, list):
+            volume = [volume] * n
+        return pd.DataFrame({
+            "&-price_change": price_change,
+            "do_predict": do_predict,
+            "volume": volume,
+        })
+
+    def test_entry_requires_1_5_pct_threshold(self):
+        """Predictions below 1.5% should NOT trigger entry."""
+        strategy = _make_strategy_with_mocks()
+        df = self._make_entry_df(
+            price_change=[0.005, 0.010, 0.014],
+            do_predict=[1, 1, 1],
+        )
+        result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert result["enter_long"].sum() == 0
+
+    def test_entry_triggers_above_1_5_pct(self):
+        """Predictions above 1.5% with do_predict=1 should trigger entry."""
+        strategy = _make_strategy_with_mocks()
+        df = self._make_entry_df(
+            price_change=[0.005, 0.020, 0.030],
+            do_predict=[1, 1, 1],
+        )
+        result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert result["enter_long"].sum() == 2
+
+    def test_entry_blocked_by_di_filter(self):
+        """do_predict=0 (DI outlier) should block entry even with strong prediction."""
+        strategy = _make_strategy_with_mocks()
+        df = self._make_entry_df(
+            price_change=[0.050],
+            do_predict=[0],
+        )
+        result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert result["enter_long"].sum() == 0
+
+    def test_entry_blocked_by_circuit_breaker(self):
+        """Circuit breaker should block all entries."""
+        strategy = _make_strategy_with_mocks()
+        strategy._risk_manager._circuit_breaker_active = True
+        df = self._make_entry_df(
+            price_change=[0.050],
+            do_predict=[1],
+        )
+        result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert result["enter_long"].sum() == 0
+
+    def test_entry_blocked_by_zero_volume(self):
+        """Zero volume candles should not trigger entry."""
+        strategy = _make_strategy_with_mocks()
+        df = self._make_entry_df(
+            price_change=[0.030],
+            do_predict=[1],
+            volume=[0],
+        )
+        result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert result["enter_long"].sum() == 0
