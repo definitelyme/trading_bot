@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime
 from user_data.strategies.AICryptoStrategy import AICryptoStrategy
 from user_data.strategies.risk.pair_allocator import PairAllocator
+from user_data.strategies.signals.signal_aggregator import SignalAggregator
 
 
 def test_strategy_file_exists():
@@ -480,3 +481,59 @@ class TestEntrySignals:
         )
         result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
         assert result["enter_long"].sum() == 0
+
+
+class TestConfirmTradeEntry:
+    """Tests for confirm_trade_entry with signal aggregation."""
+
+    def _make_strategy_with_real_aggregator(self):
+        """Strategy with real aggregator (not mocked) for signal tests."""
+        strategy = _make_strategy_with_mocks()
+        # Replace mocked aggregator with real one
+        strategy._aggregator = SignalAggregator(min_confidence=0.55)
+        return strategy
+
+    def test_high_confidence_ml_approves_entry(self):
+        """ML-only: high confidence should approve entry."""
+        strategy = self._make_strategy_with_real_aggregator()
+        preds = [0.001] * 99 + [0.04]
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+        })
+        result = strategy.confirm_trade_entry(
+            pair="BTC/USDT", order_type="limit", amount=0.01,
+            rate=50000.0, time_in_force="GTC",
+            current_time=datetime.utcnow(), entry_tag=None, side="long",
+        )
+        assert result is True
+
+    def test_low_confidence_ml_blocks_entry(self):
+        """ML-only: low confidence (below aggregator threshold) should block."""
+        strategy = self._make_strategy_with_real_aggregator()
+        preds = [0.01] * 100
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+        })
+        result = strategy.confirm_trade_entry(
+            pair="BTC/USDT", order_type="limit", amount=0.01,
+            rate=50000.0, time_in_force="GTC",
+            current_time=datetime.utcnow(), entry_tag=None, side="long",
+        )
+        assert result is False
+
+    def test_dormant_signals_dont_interfere(self):
+        """When external signals are disabled, only ML signal is used."""
+        strategy = self._make_strategy_with_real_aggregator()
+        assert strategy._fear_greed.get_signal() is None
+        assert strategy._news_sentiment.get_signal("BTC/USDT") is None
+
+        preds = [0.001] * 99 + [0.04]
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
+            "&-price_change": preds,
+        })
+        result = strategy.confirm_trade_entry(
+            pair="BTC/USDT", order_type="limit", amount=0.01,
+            rate=50000.0, time_in_force="GTC",
+            current_time=datetime.utcnow(), entry_tag=None, side="long",
+        )
+        assert result is True

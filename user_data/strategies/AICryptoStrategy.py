@@ -18,7 +18,9 @@ if _strategies_dir not in sys.path:
 
 from risk.risk_manager import RiskManager
 from risk.pair_allocator import PairAllocator, TradeResult
-from signals.signal_aggregator import SignalAggregator
+from signals.signal_aggregator import SignalAggregator, Signal
+from signals.fear_greed import FearGreedSignal
+from signals.news_sentiment import NewsSentimentSignal
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,13 @@ class AICryptoStrategy(IStrategy):
         )
         self._aggregator = SignalAggregator(
             min_confidence=float(os.getenv("MIN_SIGNAL_CONFIDENCE", "0.55"))
+        )
+        self._fear_greed = FearGreedSignal(
+            enabled=os.getenv("FEAR_GREED_ENABLED", "false").lower() == "true"
+        )
+        self._news_sentiment = NewsSentimentSignal(
+            enabled=os.getenv("NEWS_SENTIMENT_ENABLED", "false").lower() == "true",
+            api_key=os.getenv("CRYPTOPANIC_API_KEY", ""),
         )
         pairs = config.get("exchange", {}).get("pair_whitelist", [])
         self._pair_allocator = PairAllocator(
@@ -176,6 +185,49 @@ class AICryptoStrategy(IStrategy):
             pair, weight, total_portfolio * weight, risk_cap, final_stake,
         )
         return final_stake
+
+    def confirm_trade_entry(
+        self,
+        pair: str,
+        order_type: str,
+        amount: float,
+        rate: float,
+        time_in_force: str,
+        current_time: datetime,
+        entry_tag: str | None,
+        side: str,
+        **kwargs,
+    ) -> bool:
+        """Gate entries through the signal aggregator."""
+        confidence = self._get_model_confidence(pair)
+        ml_signal = Signal(
+            direction="BUY", confidence=confidence, strategy="freqai_ml"
+        )
+
+        # Collect all signals (dormant sources return None)
+        signals = [ml_signal]
+        fg_signal = self._fear_greed.get_signal()
+        if fg_signal is not None:
+            signals.append(fg_signal)
+        news_signal = self._news_sentiment.get_signal(pair)
+        if news_signal is not None:
+            signals.append(news_signal)
+
+        aggregated = self._aggregator.aggregate(signals)
+
+        if aggregated.direction != "BUY":
+            logger.info(
+                "Signal aggregator blocked %s entry: direction=%s, confidence=%.4f, sources=%s",
+                pair, aggregated.direction, aggregated.confidence,
+                aggregated.contributing_strategies,
+            )
+            return False
+
+        logger.info(
+            "Signal aggregator approved %s entry: confidence=%.4f, sources=%s",
+            pair, aggregated.confidence, aggregated.contributing_strategies,
+        )
+        return True
 
     def feature_engineering_expand_all(
         self, dataframe: DataFrame, period: int, metadata: dict, **kwargs
