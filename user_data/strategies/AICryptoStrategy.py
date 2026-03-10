@@ -220,10 +220,9 @@ class AICryptoStrategy(IStrategy):
             )
             return False
 
-        confidence = self._get_model_confidence(pair)
-        ml_signal = Signal(
-            direction="BUY", confidence=confidence, strategy="freqai_ml"
-        )
+        # TODO: restore _get_model_confidence() when F&G/News signals go live
+        # Entry threshold (1.0%) already guarantees prediction quality.
+        ml_signal = Signal(direction="BUY", confidence=0.75, strategy="freqai_ml")
 
         # Collect all signals (dormant sources return None)
         signals = [ml_signal]

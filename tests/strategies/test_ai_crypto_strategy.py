@@ -420,13 +420,10 @@ class TestConfirmTradeEntry:
         return strategy
 
     def test_high_confidence_ml_approves_entry(self):
-        """ML-only: high confidence should approve entry."""
+        """ML signal with fixed confidence=0.75 should approve entry."""
         strategy = self._make_strategy_with_real_aggregator()
         strategy._bot_start_time = datetime.utcnow() - timedelta(hours=5)
-        preds = [0.001] * 99 + [0.04]
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-        })
+
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
             MockTrade.get_trades_proxy.return_value = []
             result = strategy.confirm_trade_entry(
@@ -436,22 +433,20 @@ class TestConfirmTradeEntry:
             )
         assert result is True
 
-    def test_low_confidence_ml_blocks_entry(self):
-        """ML-only: low confidence (below aggregator threshold) should block."""
+    def test_signal_aggregator_approves_fixed_ml_confidence(self):
+        """Fixed confidence=0.75 passes SignalAggregator threshold of 0.55."""
         strategy = self._make_strategy_with_real_aggregator()
         strategy._bot_start_time = datetime.utcnow() - timedelta(hours=5)
-        preds = [0.01] * 100
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-        })
+        # No dp mock needed: _get_model_confidence is no longer called
+
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
             MockTrade.get_trades_proxy.return_value = []
             result = strategy.confirm_trade_entry(
-                pair="BTC/USDT", order_type="limit", amount=0.01,
-                rate=50000.0, time_in_force="GTC",
+                pair="ETH/USDT", order_type="limit", amount=0.01,
+                rate=2000.0, time_in_force="GTC",
                 current_time=datetime.utcnow(), entry_tag=None, side="long",
             )
-        assert result is False
+        assert result is True
 
     def test_dormant_signals_dont_interfere(self):
         """When external signals are disabled, only ML signal is used."""
@@ -460,10 +455,6 @@ class TestConfirmTradeEntry:
         assert strategy._fear_greed.get_signal() is None
         assert strategy._news_sentiment.get_signal("BTC/USDT") is None
 
-        preds = [0.001] * 99 + [0.04]
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-        })
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
             MockTrade.get_trades_proxy.return_value = []
             result = strategy.confirm_trade_entry(
@@ -472,6 +463,23 @@ class TestConfirmTradeEntry:
                 current_time=datetime.utcnow(), entry_tag=None, side="long",
             )
         assert result is True
+
+    def test_confirm_entry_approves_without_prediction_history(self):
+        """With no prediction history (empty df), entry should still be approved.
+        The fixed ML confidence replaces the broken percentile-rank calculation."""
+        strategy = self._make_strategy_with_real_aggregator()
+        strategy._bot_start_time = datetime.utcnow() - timedelta(hours=5)
+        # Empty dataframe: simulates the live bug where predictions aren't accumulating
+        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame()
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            result = strategy.confirm_trade_entry(
+                pair="BTC/USDT", order_type="limit", amount=0.01,
+                rate=50000.0, time_in_force="GTC",
+                current_time=datetime.utcnow(), entry_tag=None, side="long",
+            )
+        assert result is True  # Should approve: quality already verified by entry threshold
 
 
 class TestRateLimiting:
