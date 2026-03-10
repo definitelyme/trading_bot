@@ -430,21 +430,21 @@ class TestEntrySignals:
             "volume": volume,
         })
 
-    def test_entry_requires_1_5_pct_threshold(self):
-        """Predictions below 1.5% should NOT trigger entry."""
+    def test_entry_requires_1_0_pct_threshold(self):
+        """Predictions at or below 1.0% should NOT trigger entry."""
         strategy = _make_strategy_with_mocks()
         df = self._make_entry_df(
-            price_change=[0.005, 0.010, 0.014],
+            price_change=[0.005, 0.008, 0.010],  # 0.010 is not > 0.010
             do_predict=[1, 1, 1],
         )
         result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
         assert result["enter_long"].sum() == 0
 
-    def test_entry_triggers_above_1_5_pct(self):
-        """Predictions above 1.5% with do_predict=1 should trigger entry."""
+    def test_entry_triggers_above_1_0_pct(self):
+        """Predictions above 1.0% with do_predict=1 should trigger entry."""
         strategy = _make_strategy_with_mocks()
         df = self._make_entry_df(
-            price_change=[0.005, 0.020, 0.030],
+            price_change=[0.005, 0.011, 0.020],
             do_predict=[1, 1, 1],
         )
         result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
@@ -481,6 +481,13 @@ class TestEntrySignals:
         )
         result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
         assert result["enter_long"].sum() == 0
+
+    def test_entry_triggers_between_1_0_and_1_5_pct(self):
+        """Predictions between 1.0% and 1.5% should trigger entry at new threshold."""
+        strategy = _make_strategy_with_mocks()
+        df = self._make_entry_df(price_change=[0.011, 0.012, 0.014])
+        result = strategy.populate_entry_trend(df, {"pair": "SOL/USDT"})
+        assert result["enter_long"].sum() == 3
 
 
 class TestConfirmTradeEntry:
