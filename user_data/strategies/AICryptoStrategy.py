@@ -154,21 +154,11 @@ class AICryptoStrategy(IStrategy):
         total_portfolio = self._get_total_portfolio_value()
         base_stake = total_portfolio * weight
 
-        # Cap with RiskManager (Quarter-Kelly + ATR)
-        confidence = self._get_model_confidence(pair)
+        # ATR-based volatility scalar: target 2% portfolio risk per trade
+        # TODO: restore Quarter-Kelly confidence gate when F&G/News signals go live
         atr_pct = self._get_current_atr_pct(pair)
-        risk_cap = self._risk_manager.calculate_position_size(
-            portfolio_value=total_portfolio,
-            confidence=confidence,
-            atr_pct=atr_pct,
-        )
-        if risk_cap > 0:
-            base_stake = min(base_stake, risk_cap)
-        else:
-            logger.info(
-                "Skipping %s: risk_cap=$0 (low confidence=%.4f)", pair, confidence
-            )
-            return 0
+        volatility_scalar = min(1.0, 0.02 / max(atr_pct, 0.001))
+        base_stake = base_stake * volatility_scalar
 
         # Enforce exchange minimum
         effective_min = min_stake or 0
@@ -184,8 +174,8 @@ class AICryptoStrategy(IStrategy):
         final_stake = min(base_stake, available, max_stake)
 
         logger.info(
-            "Allocating %s: weight=%.3f, base=$%.2f, risk_cap=$%.2f, final=$%.2f",
-            pair, weight, total_portfolio * weight, risk_cap, final_stake,
+            "Allocating %s: weight=%.3f, atr=%.3f, final=$%.2f",
+            pair, weight, atr_pct, final_stake,
         )
         return final_stake
 

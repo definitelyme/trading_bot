@@ -61,8 +61,7 @@ class TestCustomStakeAmount:
             "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
         }
         strategy._pair_allocator._last_refresh = datetime.utcnow()
-        # Mock helpers to not cap (high confidence, low ATR)
-        strategy._get_model_confidence = MagicMock(return_value=0.9)
+        # Mock ATR helper (low volatility → scalar close to 1.0)
         strategy._get_current_atr_pct = MagicMock(return_value=0.01)
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
@@ -113,7 +112,6 @@ class TestCustomStakeAmount:
             "BTC/USDT": 0.05, "ETH/USDT": 0.05, "SOL/USDT": 0.90
         }
         strategy._pair_allocator._last_refresh = datetime.utcnow()
-        strategy._get_model_confidence = MagicMock(return_value=0.9)
         strategy._get_current_atr_pct = MagicMock(return_value=0.01)
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
@@ -132,40 +130,10 @@ class TestCustomStakeAmount:
         # BTC gets 0.05 * 50 = $2.50, below min_stake of $10
         assert stake == 0
 
-    def test_respects_risk_manager_cap(self):
-        """custom_stake_amount should be capped by RiskManager position size."""
-        strategy = _make_strategy_with_mocks()
-        strategy._pair_allocator._weights = {
-            "BTC/USDT": 0.90, "ETH/USDT": 0.05, "SOL/USDT": 0.05
-        }
-        strategy._pair_allocator._last_refresh = datetime.utcnow()
-        strategy._get_model_confidence = MagicMock(return_value=0.5)
-        strategy._get_current_atr_pct = MagicMock(return_value=0.03)
-        # RiskManager should cap at a lower amount than weight-based allocation
-        strategy._risk_manager.calculate_position_size = MagicMock(return_value=100.0)
-
-        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
-            MockTrade.get_trades_proxy.return_value = []
-            stake = strategy.custom_stake_amount(
-                pair="BTC/USDT",
-                current_time=datetime.utcnow(),
-                current_rate=50000.0,
-                proposed_stake=100.0,
-                min_stake=5.0,
-                max_stake=500.0,
-                leverage=1.0,
-                entry_tag=None,
-                side="long",
-            )
-        # Weight-based: 900 * 0.90 = 810, but risk cap = 100
-        assert stake <= 100.0
-        assert stake > 0
-
     def test_triggers_refresh_when_stale(self):
         """Should auto-refresh allocator when weights are stale."""
         strategy = _make_strategy_with_mocks()
         # Don't set weights — allocator needs refresh
-        strategy._get_model_confidence = MagicMock(return_value=0.7)
         strategy._get_current_atr_pct = MagicMock(return_value=0.02)
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
@@ -185,17 +153,16 @@ class TestCustomStakeAmount:
         # 1/3 * 900 = 300 (but may be capped by risk manager)
         assert stake >= 0  # should not crash
 
-    def test_returns_zero_when_risk_cap_is_zero(self):
-        """When risk manager returns 0 (low confidence), custom_stake_amount
-        should return 0 instead of bypassing the cap."""
+    def test_stake_nonzero_regardless_of_confidence(self):
+        """Stake should be positive even when confidence is 0.0 (confidence gate removed)."""
         strategy = _make_strategy_with_mocks()
         strategy._pair_allocator._weights = {
             "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
         }
         strategy._pair_allocator._last_refresh = datetime.utcnow()
-        # Low confidence → risk_cap = 0
-        strategy._get_model_confidence = MagicMock(return_value=0.3)
-        strategy._get_current_atr_pct = MagicMock(return_value=0.02)
+        # Simulate the live bug: confidence always 0
+        strategy._get_model_confidence = MagicMock(return_value=0.0)
+        strategy._get_current_atr_pct = MagicMock(return_value=0.03)
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
             MockTrade.get_trades_proxy.return_value = []
@@ -210,7 +177,38 @@ class TestCustomStakeAmount:
                 entry_tag=None,
                 side="long",
             )
-        assert stake == 0
+        assert stake > 0  # No longer blocked by confidence gate
+
+    def test_atr_scalar_reduces_stake_on_high_volatility(self):
+        """High ATR should reduce stake size via volatility scalar."""
+        strategy = _make_strategy_with_mocks()
+        strategy._pair_allocator._weights = {
+            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
+        }
+        strategy._pair_allocator._last_refresh = datetime.utcnow()
+
+        low_atr_strategy = _make_strategy_with_mocks()
+        low_atr_strategy._pair_allocator._weights = strategy._pair_allocator._weights
+        low_atr_strategy._pair_allocator._last_refresh = datetime.utcnow()
+
+        strategy._get_current_atr_pct = MagicMock(return_value=0.08)   # 8% ATR → scalar=0.25
+        low_atr_strategy._get_current_atr_pct = MagicMock(return_value=0.01)  # 1% ATR → scalar=1.0
+
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake_high_vol = strategy.custom_stake_amount(
+                pair="BTC/USDT", current_time=datetime.utcnow(),
+                current_rate=50000.0, proposed_stake=100.0,
+                min_stake=5.0, max_stake=500.0, leverage=1.0, entry_tag=None, side="long",
+            )
+        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
+            MockTrade.get_trades_proxy.return_value = []
+            stake_low_vol = low_atr_strategy.custom_stake_amount(
+                pair="BTC/USDT", current_time=datetime.utcnow(),
+                current_rate=50000.0, proposed_stake=100.0,
+                min_stake=5.0, max_stake=500.0, leverage=1.0, entry_tag=None, side="long",
+            )
+        assert stake_high_vol < stake_low_vol
 
 
 class TestModelConfidence:
@@ -281,135 +279,56 @@ class TestIntegrationConfidenceToStake:
     """Integration tests: full pipeline from prediction → confidence → risk → stake."""
 
     def test_high_prediction_produces_nonzero_stake(self):
-        """Strong prediction → high confidence → risk cap > 0 → positive stake."""
+        """Strong ATR conditions should produce a positive stake."""
         strategy = _make_strategy_with_mocks()
         strategy._pair_allocator._weights = {
             "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
         }
         strategy._pair_allocator._last_refresh = datetime.utcnow()
-
-        # Simulate predictions where last one is extreme (high confidence)
-        preds = [0.001] * 99 + [0.04]
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-            "close": [50000.0] * 100,
-            "%-atr-period_10_1h": [500.0] * 100,  # 1% ATR
-        })
+        strategy._get_current_atr_pct = MagicMock(return_value=0.03)  # 3% ATR → scalar=0.67
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
             MockTrade.get_trades_proxy.return_value = []
             stake = strategy.custom_stake_amount(
-                pair="BTC/USDT",
-                current_time=datetime.utcnow(),
-                current_rate=50000.0,
-                proposed_stake=100.0,
-                min_stake=5.0,
-                max_stake=500.0,
-                leverage=1.0,
-                entry_tag=None,
-                side="long",
+                pair="BTC/USDT", current_time=datetime.utcnow(),
+                current_rate=50000.0, proposed_stake=100.0,
+                min_stake=5.0, max_stake=500.0, leverage=1.0, entry_tag=None, side="long",
             )
         assert stake > 0
         assert stake <= 500.0
 
-    def test_weak_prediction_produces_zero_stake(self):
-        """Weak prediction → low confidence → risk cap = 0 → stake = 0."""
-        strategy = _make_strategy_with_mocks()
-        strategy._pair_allocator._weights = {
-            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
-        }
-        strategy._pair_allocator._last_refresh = datetime.utcnow()
-
-        # All predictions identical → current is at 0th percentile
-        preds = [0.01] * 100
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-            "close": [50000.0] * 100,
-            "%-atr-period_10_1h": [500.0] * 100,
-        })
-
-        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
-            MockTrade.get_trades_proxy.return_value = []
-            stake = strategy.custom_stake_amount(
-                pair="BTC/USDT",
-                current_time=datetime.utcnow(),
-                current_rate=50000.0,
-                proposed_stake=100.0,
-                min_stake=5.0,
-                max_stake=500.0,
-                leverage=1.0,
-                entry_tag=None,
-                side="long",
-            )
-        assert stake == 0
-
-    def test_risk_cap_bounds_weight_based_allocation(self):
-        """Risk cap from quarter-Kelly should be tighter than weight-based."""
+    def test_atr_scalar_caps_stake_below_weight_based(self):
+        """ATR scalar should reduce stake below raw weight-based allocation on volatile days."""
         strategy = _make_strategy_with_mocks()
         strategy._pair_allocator._weights = {
             "BTC/USDT": 0.90, "ETH/USDT": 0.05, "SOL/USDT": 0.05
         }
         strategy._pair_allocator._last_refresh = datetime.utcnow()
-
-        # Moderate prediction → moderate confidence → smaller risk cap
-        preds = list(np.linspace(0.001, 0.05, 99)) + [0.03]
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-            "close": [50000.0] * 100,
-            "%-atr-period_10_1h": [500.0] * 100,
-        })
+        strategy._get_current_atr_pct = MagicMock(return_value=0.10)  # 10% ATR → scalar=0.2
 
         with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
             MockTrade.get_trades_proxy.return_value = []
             stake = strategy.custom_stake_amount(
-                pair="BTC/USDT",
-                current_time=datetime.utcnow(),
-                current_rate=50000.0,
-                proposed_stake=100.0,
-                min_stake=5.0,
-                max_stake=500.0,
-                leverage=1.0,
-                entry_tag=None,
-                side="long",
+                pair="BTC/USDT", current_time=datetime.utcnow(),
+                current_rate=50000.0, proposed_stake=100.0,
+                min_stake=5.0, max_stake=500.0, leverage=1.0, entry_tag=None, side="long",
             )
-        # Weight-based: 900 * 0.90 = 810, but risk cap should be lower
-        assert stake > 0
         weight_based = 900 * 0.90
+        assert stake > 0
         assert stake < weight_based
 
-    def test_circuit_breaker_blocks_entire_pipeline(self):
-        """Circuit breaker active → risk_cap = 0 → stake = 0."""
+    def test_circuit_breaker_blocks_entries_at_signal_level(self):
+        """Circuit breaker blocks enter_long=1 in populate_entry_trend, so custom_stake_amount
+        is never reached. Verify the signal is blocked (tested at populate_entry_trend)."""
         strategy = _make_strategy_with_mocks()
-        strategy._pair_allocator._weights = {
-            "BTC/USDT": 0.40, "ETH/USDT": 0.35, "SOL/USDT": 0.25
-        }
-        strategy._pair_allocator._last_refresh = datetime.utcnow()
-        # Trigger circuit breaker
-        strategy._risk_manager.record_drawdown(
-            amount=150.0, portfolio_value=1000.0, window="24h"
-        )
-
-        preds = [0.001] * 99 + [0.04]
-        strategy.dp.get_pair_dataframe.return_value = pd.DataFrame({
-            "&-price_change": preds,
-            "close": [50000.0] * 100,
-            "%-atr-period_10_1h": [500.0] * 100,
+        strategy._risk_manager._circuit_breaker_active = True
+        df = pd.DataFrame({
+            "&-price_change": [0.050],
+            "do_predict": [1],
+            "volume": [1000],
         })
-
-        with patch("user_data.strategies.AICryptoStrategy.Trade") as MockTrade:
-            MockTrade.get_trades_proxy.return_value = []
-            stake = strategy.custom_stake_amount(
-                pair="BTC/USDT",
-                current_time=datetime.utcnow(),
-                current_rate=50000.0,
-                proposed_stake=100.0,
-                min_stake=5.0,
-                max_stake=500.0,
-                leverage=1.0,
-                entry_tag=None,
-                side="long",
-            )
-        assert stake == 0  # circuit breaker blocks everything
+        result = strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert result["enter_long"].sum() == 0  # blocked at signal level
 
 
 class TestEntrySignals:
