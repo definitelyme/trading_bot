@@ -4,7 +4,7 @@ from typing import Optional
 
 import requests
 
-from user_data.strategies.signals.signal_aggregator import Signal
+from signals.signal_aggregator import Signal
 
 logger = logging.getLogger(__name__)
 
