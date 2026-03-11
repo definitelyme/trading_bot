@@ -693,6 +693,7 @@ class TestLogPredictions:
             strategy._log_predictions(df, {"pair": "DOGE/USDT"})
         assert "PREDICTION DOGE/USDT" in caplog.text
         assert "1.43%" in caplog.text
+        assert "84253.50000" in caplog.text
 
     def test_works_without_close_column(self, caplog):
         """close column is optional — should not crash if absent."""

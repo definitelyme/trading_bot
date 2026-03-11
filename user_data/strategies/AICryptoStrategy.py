@@ -22,6 +22,9 @@ from signals.signal_aggregator import SignalAggregator, Signal
 from signals.fear_greed import FearGreedSignal
 from signals.news_sentiment import NewsSentimentSignal
 
+# Freqtrade loads strategies as standalone files (not as package modules),
+# so __name__ == "AICryptoStrategy" at runtime. We hardcode the name for
+# consistency between Freqtrade runtime and pytest caplog captures.
 logger = logging.getLogger("AICryptoStrategy")
 
 class AICryptoStrategy(IStrategy):
@@ -153,7 +156,10 @@ class AICryptoStrategy(IStrategy):
         if pd.isna(pred):
             return
         close = dataframe["close"].iloc[-1] if "close" in dataframe.columns else 0.0
-        do_predict = int(dataframe["do_predict"].iloc[-1])
+        dp_val = dataframe["do_predict"].iloc[-1]
+        if pd.isna(dp_val):
+            return
+        do_predict = int(dp_val)
         above_below = "ABOVE" if pred > self.ENTRY_THRESHOLD else "BELOW"
         logger.info(
             "PREDICTION %s: pred=%+.4f (%.2f%%), threshold=%.2f%%, %s, close=%.5f, do_predict=%d",
