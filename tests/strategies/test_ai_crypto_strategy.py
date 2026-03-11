@@ -1,3 +1,4 @@
+import logging
 import pytest
 import pandas as pd
 import numpy as np
@@ -629,3 +630,89 @@ class TestExitSignals:
         })
         result = strategy.populate_exit_trend(df, {"pair": "BTC/USDT"})
         assert result["exit_long"].sum() == 0
+
+
+class TestLogPredictions:
+    """Tests for _log_predictions per-candle logging."""
+
+    def _make_df(self, pred, close=50000.0, do_predict=1):
+        return pd.DataFrame({
+            "&-price_change": [pred],
+            "do_predict": [do_predict],
+            "close": [close],
+        })
+
+    def test_logs_above_when_pred_exceeds_threshold(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = self._make_df(pred=0.015)
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "BTC/USDT"})
+        assert "PREDICTION BTC/USDT" in caplog.text
+        assert "ABOVE" in caplog.text
+
+    def test_logs_below_when_pred_under_threshold(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = self._make_df(pred=0.005)
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "ETH/USDT"})
+        assert "PREDICTION ETH/USDT" in caplog.text
+        assert "BELOW" in caplog.text
+
+    def test_skips_when_price_change_column_missing(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({"do_predict": [1], "close": [100.0]})
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "SOL/USDT"})
+        assert "PREDICTION" not in caplog.text
+
+    def test_skips_when_do_predict_column_missing(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({"&-price_change": [0.02], "close": [100.0]})
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "SOL/USDT"})
+        assert "PREDICTION" not in caplog.text
+
+    def test_skips_when_dataframe_empty(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame()
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "BTC/USDT"})
+        assert "PREDICTION" not in caplog.text
+
+    def test_skips_when_prediction_is_nan(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = self._make_df(pred=float("nan"))
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "BTC/USDT"})
+        assert "PREDICTION" not in caplog.text
+
+    def test_log_contains_pred_and_close(self, caplog):
+        strategy = _make_strategy_with_mocks()
+        df = self._make_df(pred=0.0143, close=84253.50)
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "DOGE/USDT"})
+        assert "PREDICTION DOGE/USDT" in caplog.text
+        assert "1.43%" in caplog.text
+
+    def test_works_without_close_column(self, caplog):
+        """close column is optional — should not crash if absent."""
+        strategy = _make_strategy_with_mocks()
+        df = pd.DataFrame({"&-price_change": [0.015], "do_predict": [1]})
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy._log_predictions(df, {"pair": "WIF/USDT"})
+        assert "PREDICTION WIF/USDT" in caplog.text
+
+    def test_populate_entry_trend_calls_log_predictions(self, caplog):
+        """_log_predictions fires from populate_entry_trend even when circuit
+        breaker is active (placed before the early return)."""
+        strategy = _make_strategy_with_mocks()
+        strategy._risk_manager._circuit_breaker_active = True
+        df = pd.DataFrame({
+            "&-price_change": [0.020],
+            "do_predict": [1],
+            "close": [50000.0],
+            "volume": [1000],
+        })
+        with caplog.at_level(logging.INFO, logger="AICryptoStrategy"):
+            strategy.populate_entry_trend(df, {"pair": "BTC/USDT"})
+        assert "PREDICTION BTC/USDT" in caplog.text

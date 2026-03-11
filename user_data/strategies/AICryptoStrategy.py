@@ -22,7 +22,7 @@ from signals.signal_aggregator import SignalAggregator, Signal
 from signals.fear_greed import FearGreedSignal
 from signals.news_sentiment import NewsSentimentSignal
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("AICryptoStrategy")
 
 class AICryptoStrategy(IStrategy):
     """
@@ -136,6 +136,30 @@ class AICryptoStrategy(IStrategy):
             return atr_val / close_val
         except Exception:
             return 0.05
+
+
+    def _log_predictions(self, dataframe: DataFrame, metadata: dict) -> None:
+        """Emit one structured log line per candle for observability.
+
+        Fires for every pair every candle regardless of circuit breaker state.
+        Captured by log_parser.py for the 2h report Prediction & Signal Summary.
+        """
+        pair = metadata.get("pair", "?")
+        if dataframe.empty:
+            return
+        if "&-price_change" not in dataframe.columns or "do_predict" not in dataframe.columns:
+            return
+        pred = dataframe["&-price_change"].iloc[-1]
+        if pd.isna(pred):
+            return
+        close = dataframe["close"].iloc[-1] if "close" in dataframe.columns else 0.0
+        do_predict = int(dataframe["do_predict"].iloc[-1])
+        above_below = "ABOVE" if pred > self.ENTRY_THRESHOLD else "BELOW"
+        logger.info(
+            "PREDICTION %s: pred=%+.4f (%.2f%%), threshold=%.2f%%, %s, close=%.5f, do_predict=%d",
+            pair, pred, pred * 100, self.ENTRY_THRESHOLD * 100,
+            above_below, close, do_predict,
+        )
 
     def custom_stake_amount(
         self,
@@ -322,6 +346,9 @@ class AICryptoStrategy(IStrategy):
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """Entry signal: predicted price change exceeds threshold."""
+        # Always log predictions for observability (before any gating)
+        self._log_predictions(dataframe, metadata)
+
         if self._risk_manager.is_circuit_breaker_active():
             logger.warning("Circuit breaker active — no entries allowed")
             dataframe["enter_long"] = 0
