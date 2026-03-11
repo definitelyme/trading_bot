@@ -11,12 +11,16 @@ def parse_log_content(text: str) -> dict:
     signals = _parse_signals(lines)
     allocations = _parse_allocations(lines)
     health = _parse_health(lines)
+    predictions = _parse_predictions(lines)
+    signal_aggregator = _parse_signal_aggregator(lines)
 
     return {
         "training": training,
         "signals": signals,
         "allocations": allocations,
         "health": health,
+        "predictions": predictions,
+        "signal_aggregator": signal_aggregator,
     }
 
 
@@ -189,3 +193,51 @@ def _parse_health(lines: list[str]) -> dict:
         "last_timestamp": last_ts,
         "total_lines": len(lines),
     }
+
+
+def _parse_predictions(lines: list[str]) -> dict:
+    """Parse PREDICTION log lines into per-pair candle stats.
+
+    Accumulates a running sum of pred_pct per pair; computes avg at end.
+    """
+    per_pair: dict[str, dict] = {}
+    sum_pred_pct: dict[str, float] = {}
+
+    pattern = re.compile(
+        r"PREDICTION (\S+/\S+): pred=[+-][\d.]+ \(([+-]?[\d.]+)%\), "
+        r"threshold=[\d.]+%, (ABOVE|BELOW), close=[\d.]+, do_predict=(\d)"
+    )
+
+    for line in lines:
+        m = pattern.search(line)
+        if not m:
+            continue
+        pair = m.group(1)
+        pred_pct = float(m.group(2))
+        above_below = m.group(3)
+        do_predict = int(m.group(4))
+
+        if pair not in per_pair:
+            per_pair[pair] = {"candles": 0, "above": 0, "below": 0,
+                              "avg_pred_pct": 0.0, "last_do_predict": 0}
+            sum_pred_pct[pair] = 0.0
+
+        per_pair[pair]["candles"] += 1
+        per_pair[pair]["last_do_predict"] = do_predict
+        sum_pred_pct[pair] += pred_pct
+        if above_below == "ABOVE":
+            per_pair[pair]["above"] += 1
+        else:
+            per_pair[pair]["below"] += 1
+
+    # Compute averages now that all lines are processed
+    for pair, stats in per_pair.items():
+        if stats["candles"] > 0:
+            stats["avg_pred_pct"] = round(sum_pred_pct[pair] / stats["candles"], 3)
+
+    return per_pair
+
+
+def _parse_signal_aggregator(lines: list[str]) -> dict:
+    return {"approved": 0, "blocked_aggregator": 0,
+            "blocked_rate_limit": 0, "blocked_cooldown": 0}

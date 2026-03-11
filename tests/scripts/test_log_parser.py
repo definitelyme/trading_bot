@@ -95,3 +95,52 @@ def test_parse_health_timestamps():
     health = result["health"]
     assert health["first_timestamp"] == "2026-03-08 21:34:22"
     assert health["last_timestamp"] == "2026-03-08 21:43:00"
+
+SAMPLE_PREDICTION_LOG = """\
+2026-03-11 14:00:01,001 - AICryptoStrategy - INFO - PREDICTION BTC/USDT: pred=+0.0082 (0.82%), threshold=1.00%, BELOW, close=84253.50000, do_predict=1
+2026-03-11 14:00:01,002 - AICryptoStrategy - INFO - PREDICTION DOGE/USDT: pred=+0.0143 (1.43%), threshold=1.00%, ABOVE, close=0.09540, do_predict=1
+2026-03-11 15:00:01,001 - AICryptoStrategy - INFO - PREDICTION BTC/USDT: pred=+0.0091 (0.91%), threshold=1.00%, BELOW, close=84300.00000, do_predict=1
+2026-03-11 15:00:01,002 - AICryptoStrategy - INFO - PREDICTION DOGE/USDT: pred=-0.0021 (-0.21%), threshold=1.00%, BELOW, close=0.09510, do_predict=0
+"""
+
+
+def test_parse_predictions_counts_candles():
+    result = parse_log_content(SAMPLE_PREDICTION_LOG)
+    preds = result["predictions"]
+    assert preds["BTC/USDT"]["candles"] == 2
+    assert preds["DOGE/USDT"]["candles"] == 2
+
+
+def test_parse_predictions_above_below_counts():
+    result = parse_log_content(SAMPLE_PREDICTION_LOG)
+    preds = result["predictions"]
+    assert preds["BTC/USDT"]["above"] == 0
+    assert preds["BTC/USDT"]["below"] == 2
+    assert preds["DOGE/USDT"]["above"] == 1
+    assert preds["DOGE/USDT"]["below"] == 1
+
+
+def test_parse_predictions_avg_pred_pct():
+    result = parse_log_content(SAMPLE_PREDICTION_LOG)
+    preds = result["predictions"]
+    # BTC: avg of 0.82 and 0.91 = 0.865
+    assert abs(preds["BTC/USDT"]["avg_pred_pct"] - 0.865) < 0.01
+
+
+def test_parse_predictions_last_do_predict():
+    result = parse_log_content(SAMPLE_PREDICTION_LOG)
+    preds = result["predictions"]
+    assert preds["BTC/USDT"]["last_do_predict"] == 1
+    assert preds["DOGE/USDT"]["last_do_predict"] == 0
+
+
+def test_parse_predictions_empty_when_no_lines():
+    result = parse_log_content("2026-03-11 14:00:00,000 - freqtrade - INFO - Bot heartbeat\n")
+    assert result["predictions"] == {}
+
+
+def test_predictions_key_present_in_return_dict():
+    """parse_log_content must always include predictions and signal_aggregator keys."""
+    result = parse_log_content("")
+    assert "predictions" in result
+    assert "signal_aggregator" in result
