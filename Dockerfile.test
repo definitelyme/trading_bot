@@ -8,6 +8,7 @@ USER ftuser
 WORKDIR /freqtrade
 
 COPY user_data/ /freqtrade/user_data/
+COPY scripts/ /freqtrade/scripts/
 COPY tests/ /freqtrade/tests/
 COPY pyproject.toml /freqtrade/pyproject.toml
 
