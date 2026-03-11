@@ -124,15 +124,14 @@ def _parse_allocations(lines: list[str]) -> dict:
 
     for line in lines:
         m = re.search(
-            r"Allocating (\S+/\S+): weight=([\d.]+), base=\$([\d.]+), risk_cap=\$([\d.]+), final=\$([\d.]+)",
+            r"Allocating (\S+/\S+): weight=([\d.]+), atr=([\d.]+), final=\$([\d.]+)",
             line,
         )
         if m:
             allocations[m.group(1)] = {
                 "weight": float(m.group(2)),
-                "base": float(m.group(3)),
-                "risk_cap": float(m.group(4)),
-                "final": float(m.group(5)),
+                "atr": float(m.group(3)),
+                "final": float(m.group(4)),
             }
 
     return allocations

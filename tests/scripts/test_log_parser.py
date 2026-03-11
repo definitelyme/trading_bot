@@ -39,11 +39,11 @@ def test_parse_training_metrics():
 
 
 SAMPLE_SIGNALS_LOG = """\
-2026-03-08 22:00:07,650 - AICryptoStrategy - INFO - Allocating BTC/USDT: weight=0.091, base=$90.91, risk_cap=$0.00, final=$90.91
+2026-03-08 22:00:07,650 - AICryptoStrategy - INFO - Allocating BTC/USDT: weight=0.091, atr=0.050, final=$90.91
 2026-03-08 22:00:07,651 - freqtrade.freqtradebot - INFO - Long signal found: about create a new trade for BTC/USDT with stake_amount: 90.91 and price: 66939.5 ...
 2026-03-08 22:00:08,676 - freqtrade.freqtradebot - INFO - Order dry_run_buy_BTC/USDT_1773007207.65213 was created for BTC/USDT and status is closed.
-2026-03-08 22:00:09,733 - AICryptoStrategy - INFO - Allocating ETH/USDT: weight=0.091, base=$90.91, risk_cap=$0.00, final=$90.91
-2026-03-08 22:00:09,735 - freqtrade.freqtradebot - INFO - Long signal found: about create a new trade for ETH/USDT with stake_amount: 90.91 and price: 1948.97 ...
+2026-03-08 22:00:09,733 - AICryptoStrategy - INFO - Allocating ETH/USDT: weight=0.091, atr=0.025, final=$72.73
+2026-03-08 22:00:09,735 - freqtrade.freqtradebot - INFO - Long signal found: about create a new trade for ETH/USDT with stake_amount: 72.73 and price: 1948.97 ...
 2026-03-08 22:00:10,749 - freqtrade.freqtradebot - INFO - Order dry_run_buy_ETH/USDT_1773007209.736057 was created for ETH/USDT and status is open.
 """
 
@@ -67,8 +67,11 @@ def test_parse_allocations():
     result = parse_log_content(SAMPLE_SIGNALS_LOG)
     alloc = result["allocations"]
     assert alloc["BTC/USDT"]["weight"] == 0.091
+    assert alloc["BTC/USDT"]["atr"] == 0.050
     assert alloc["BTC/USDT"]["final"] == 90.91
     assert alloc["ETH/USDT"]["weight"] == 0.091
+    assert alloc["ETH/USDT"]["atr"] == 0.025
+    assert alloc["ETH/USDT"]["final"] == 72.73
 
 
 def test_parse_health_heartbeat_gap():

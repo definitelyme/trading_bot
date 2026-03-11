@@ -149,13 +149,12 @@ def generate_two_hour_report(
     # --- Risk & Position Sizing ---
     lines.append("## Risk & Position Sizing")
     if allocations:
-        lines.append("| Pair | Weight | Base Stake | Risk Cap | Final Stake |")
-        lines.append("|---|---|---|---|---|")
+        lines.append("| Pair | Weight | ATR% | Final Stake |")
+        lines.append("|---|---|---|---|")
         for pair, alloc in sorted(allocations.items()):
             lines.append(
                 f"| {pair} | {alloc['weight']:.3f} "
-                f"| ${alloc['base']:.2f} "
-                f"| ${alloc['risk_cap']:.2f} "
+                f"| {alloc['atr'] * 100:.1f}% "
                 f"| ${alloc['final']:.2f} |"
             )
     else:

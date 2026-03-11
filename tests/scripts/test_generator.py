@@ -64,7 +64,7 @@ def sample_log_metrics():
             "exits": {},
         },
         "allocations": {
-            "BTC/USDT": {"weight": 0.091, "base": 90.91, "risk_cap": 0.0, "final": 90.91},
+            "BTC/USDT": {"weight": 0.091, "atr": 0.050, "final": 90.91},
         },
         "health": {
             "heartbeat_gaps": 0,

@@ -29,10 +29,10 @@ REALISTIC_LOG = """\
 2026-03-08 20:35:09,223 - freqtrade.freqai.base_models.BaseRegressionModel - INFO - Training model on 434 features
 2026-03-08 20:35:09,223 - freqtrade.freqai.base_models.BaseRegressionModel - INFO - Training model on 395 data points
 2026-03-08 20:35:30,000 - freqtrade.freqai.base_models.BaseRegressionModel - INFO - -------------------- Done training ETH/USDT (21.03 secs) --------------------
-2026-03-08 21:00:07,650 - AICryptoStrategy - INFO - Allocating BTC/USDT: weight=0.091, base=$90.91, risk_cap=$0.00, final=$90.91
+2026-03-08 21:00:07,650 - AICryptoStrategy - INFO - Allocating BTC/USDT: weight=0.091, atr=0.050, final=$90.91
 2026-03-08 21:00:07,651 - freqtrade.freqtradebot - INFO - Long signal found: about create a new trade for BTC/USDT with stake_amount: 90.91 and price: 66939.5 ...
 2026-03-08 21:00:08,676 - freqtrade.freqtradebot - INFO - Order dry_run_buy_BTC/USDT_1773007207.65213 was created for BTC/USDT and status is closed.
-2026-03-08 21:00:09,733 - AICryptoStrategy - INFO - Allocating ETH/USDT: weight=0.091, base=$90.91, risk_cap=$0.00, final=$90.91
+2026-03-08 21:00:09,733 - AICryptoStrategy - INFO - Allocating ETH/USDT: weight=0.091, atr=0.025, final=$72.73
 2026-03-08 21:59:55,789 - freqtrade.worker - INFO - Bot heartbeat. PID=1, version='2026.2', state='RUNNING'
 """
 
