@@ -12,6 +12,12 @@ def test_strategy_file_exists():
     assert AICryptoStrategy is not None
 
 
+def test_entry_threshold_constant_defined():
+    """ENTRY_THRESHOLD class constant must exist and equal 0.010."""
+    assert hasattr(AICryptoStrategy, "ENTRY_THRESHOLD")
+    assert AICryptoStrategy.ENTRY_THRESHOLD == 0.010
+
+
 def test_strategy_has_required_freqai_methods():
     assert hasattr(AICryptoStrategy, "feature_engineering_expand_all")
     assert hasattr(AICryptoStrategy, "set_freqai_targets")

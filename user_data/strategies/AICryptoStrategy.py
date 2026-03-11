@@ -48,6 +48,9 @@ class AICryptoStrategy(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 50
 
+    # Entry threshold: minimum predicted price change to trigger a signal
+    ENTRY_THRESHOLD: float = 0.010
+
     # Entry/exit signal thresholds (tunable)
     entry_confidence_threshold = DecimalParameter(0.60, 0.85, default=0.65, space="buy")
     exit_confidence_threshold = DecimalParameter(0.55, 0.80, default=0.60, space="sell")
@@ -93,7 +96,7 @@ class AICryptoStrategy(IStrategy):
             trades_by_pair[pair] = [
                 TradeResult(profit_abs=t.close_profit_abs, close_date=t.close_date)
                 for t in raw_trades
-                if t.close_date and t.close_date >= cutoff
+                if t.close_date and t.close_date.replace(tzinfo=None) >= cutoff
             ]
         self._pair_allocator.refresh_weights(trades_by_pair)
 
@@ -119,17 +122,20 @@ class AICryptoStrategy(IStrategy):
         return round(rank, 4)
 
     def _get_current_atr_pct(self, pair: str) -> float:
+        # dp.get_pair_dataframe() has OHLCV but NOT the %-atr- FreqAI feature
+        # columns (those live inside FreqAI's internal pipeline). Compute ATR
+        # directly from raw OHLCV so stake sizing varies by actual volatility.
         df = self.dp.get_pair_dataframe(pair=pair, timeframe=self.timeframe)
-        if df.empty:
+        if df.empty or len(df) < 11:
             return 0.05  # conservative default
-        atr_cols = [c for c in df.columns if c.startswith("%-atr-")]
-        if not atr_cols:
+        try:
+            atr_val = ta.ATR(df, timeperiod=10).iloc[-1]
+            close_val = df["close"].iloc[-1]
+            if pd.isna(atr_val) or pd.isna(close_val) or close_val == 0:
+                return 0.05
+            return atr_val / close_val
+        except Exception:
             return 0.05
-        atr_val = df[atr_cols[0]].iloc[-1]
-        close_val = df["close"].iloc[-1]
-        if pd.isna(atr_val) or pd.isna(close_val) or close_val == 0:
-            return 0.05
-        return atr_val / close_val
 
     def custom_stake_amount(
         self,
@@ -208,10 +214,11 @@ class AICryptoStrategy(IStrategy):
                 return False
 
         # Rate limit: max N new entries per hour
+        # t.open_date is UTC-aware; current_time is naive UTC — strip tzinfo to compare
         open_trades = Trade.get_trades_proxy(is_open=True)
         recent_entries = [
             t for t in open_trades
-            if t.open_date and (current_time - t.open_date).total_seconds() < 3600
+            if t.open_date and (current_time - t.open_date.replace(tzinfo=None)).total_seconds() < 3600
         ]
         if len(recent_entries) >= self._max_entries_per_hour:
             logger.info(
@@ -322,7 +329,7 @@ class AICryptoStrategy(IStrategy):
 
         dataframe.loc[
             (
-                (dataframe["&-price_change"] > 0.010)
+                (dataframe["&-price_change"] > self.ENTRY_THRESHOLD)
                 & (dataframe["do_predict"] == 1)
                 & (dataframe["volume"] > 0)
             ),
