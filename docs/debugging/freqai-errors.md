@@ -55,3 +55,30 @@
 - New pairs added
 - Thresholds changed
 - Config values changed
+
+---
+
+## TypeError: can't subtract offset-naive and offset-aware datetimes
+
+**Symptom**: `strategy_wrapper - ERROR - Unexpected error TypeError("can't subtract offset-naive and offset-aware datetimes") calling confirm_trade_entry`
+
+**Cause**: `current_time` passed by Freqtrade to strategy hooks is a naive UTC `datetime` (no tzinfo). `Trade.open_date` and `Trade.close_date` are stored as timezone-aware UTC datetimes (`tzinfo=timezone.utc`). Subtracting them raises a TypeError.
+
+**Fix** (applied 2026-03-11 in `AICryptoStrategy.py`):
+- `confirm_trade_entry` rate-limit check: use `t.open_date.replace(tzinfo=None)` before subtracting
+- `_refresh_allocator` cutoff filter: use `t.close_date.replace(tzinfo=None)` before comparing
+
+**Impact if unpatched**: `confirm_trade_entry` crashes on pairs when there are already open trades in the same candle cycle. Freqtrade's `strategy_wrapper` catches the exception and **defaults to True** — so trades still open, but the signal aggregator and rate limit are silently bypassed.
+
+---
+
+## ATR stake sizing always returns fallback value ($36.36)
+
+**Symptom**: All allocations show `atr=0.050` regardless of pair. Every stake is identical at $36.36.
+
+**Cause**: `_get_current_atr_pct` searched `dp.get_pair_dataframe()` for `%-atr-*` columns, but those columns are created inside FreqAI's internal training pipeline and are **not** present in the dataprovider's main dataframe. The column-not-found branch always returned the 0.05 fallback.
+
+**Fix** (applied 2026-03-11 in `AICryptoStrategy.py`):
+Replaced column-lookup with a direct `ta.ATR(df, timeperiod=10)` call on the raw OHLCV dataframe — which is always available from `dp.get_pair_dataframe()`.
+
+**After fix**: Stakes will vary by actual pair volatility — BTC ~$90 (low ATR%), WIF ~$22 (high ATR%).
