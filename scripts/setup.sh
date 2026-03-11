@@ -100,3 +100,7 @@ echo "Manual commands:"
 echo "  • Generate report now:  source .venv/bin/activate && python3 scripts/daily-report.py"
 echo "  • Rotate + report now:  source .venv/bin/activate && python3 scripts/two-hour-report.py"
 echo "  • Check bot logs:       docker compose logs --tail 20"
+
+
+# TO GET THE CONTAINER CREATED AT TIME
+# docker compose ps --format json | python3 -c "import json,sys; data=json.load(sys.stdin); [print(s['Name'], s.get('CreatedAt','N/A')) for s in (data if isinstance(data,list) else [data])]"
