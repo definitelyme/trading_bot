@@ -45,13 +45,22 @@
         "live_retrain_hours": 4,
         "identifier": "ai_crypto_v1",
         "feature_parameters": {
-            "include_timeframes": ["1h", "4h"],
-            "include_corr_pairlist": ["BTC/USDT", "ETH/USDT"],
+            "include_timeframes": [
+                "1h",
+                "4h"
+            ],
+            "include_corr_pairlist": [
+                "BTC/USDT",
+                "ETH/USDT"
+            ],
             "label_period_candles": 12,
             "include_shifted_candles": 1,
             "DI_threshold": 0.9,
             "weight_factor": 0.9,
-            "indicator_periods_candles": [10, 20]
+            "indicator_periods_candles": [
+                10,
+                20
+            ]
         },
         "data_split_parameters": {
             "test_size": 0.25,
