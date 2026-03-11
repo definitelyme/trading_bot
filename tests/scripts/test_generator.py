@@ -120,3 +120,51 @@ def test_report_no_open_trades(sample_api_data, sample_log_metrics):
         log_metrics=sample_log_metrics,
     )
     assert "No open trades" in report
+
+
+def test_report_contains_prediction_signal_summary(sample_api_data, sample_log_metrics):
+    """Prediction & Signal Summary section appears when predictions data is present."""
+    sample_log_metrics["predictions"] = {
+        "BTC/USDT": {"candles": 2, "above": 0, "below": 2, "avg_pred_pct": 0.42, "last_do_predict": 1},
+        "DOGE/USDT": {"candles": 2, "above": 1, "below": 1, "avg_pred_pct": 1.12, "last_do_predict": 1},
+    }
+    sample_log_metrics["signal_aggregator"] = {
+        "approved": 1, "blocked_aggregator": 0,
+        "blocked_rate_limit": 2, "blocked_cooldown": 0,
+    }
+    report = generate_two_hour_report(
+        window_start="20:00", window_end="22:00",
+        date_str="2026-03-08",
+        api_data=sample_api_data,
+        log_metrics=sample_log_metrics,
+    )
+    assert "Prediction & Signal Summary" in report
+    assert "approved=1" in report
+    assert "blocked_rate_limit=2" in report
+    assert "BTC/USDT" in report
+    assert "DOGE/USDT" in report
+
+
+def test_report_prediction_summary_fallback_when_absent(sample_api_data, sample_log_metrics):
+    """Graceful fallback when predictions key is missing (old log snapshots)."""
+    # sample_log_metrics has no "predictions" key — test graceful degradation
+    report = generate_two_hour_report(
+        window_start="20:00", window_end="22:00",
+        date_str="2026-03-08",
+        api_data=sample_api_data,
+        log_metrics=sample_log_metrics,
+    )
+    assert "No prediction data in this window" in report
+
+
+def test_report_risk_sizing_uses_atr_column(sample_api_data, sample_log_metrics):
+    """Risk & Position Sizing table must show ATR% column, not Base Stake / Risk Cap."""
+    report = generate_two_hour_report(
+        window_start="20:00", window_end="22:00",
+        date_str="2026-03-08",
+        api_data=sample_api_data,
+        log_metrics=sample_log_metrics,
+    )
+    assert "ATR%" in report
+    assert "Base Stake" not in report
+    assert "Risk Cap" not in report

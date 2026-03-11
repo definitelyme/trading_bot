@@ -239,5 +239,20 @@ def _parse_predictions(lines: list[str]) -> dict:
 
 
 def _parse_signal_aggregator(lines: list[str]) -> dict:
-    return {"approved": 0, "blocked_aggregator": 0,
-            "blocked_rate_limit": 0, "blocked_cooldown": 0}
+    """Parse signal aggregator approved/blocked and rate-limit/cooldown lines."""
+    counts = {
+        "approved": 0,
+        "blocked_aggregator": 0,
+        "blocked_rate_limit": 0,
+        "blocked_cooldown": 0,
+    }
+    for line in lines:
+        if re.search(r"Signal aggregator approved \S+/\S+ entry", line):
+            counts["approved"] += 1
+        elif re.search(r"Signal aggregator blocked \S+/\S+ entry", line):
+            counts["blocked_aggregator"] += 1
+        elif re.search(r"Rate limit: .* skipping \S+/\S+", line):
+            counts["blocked_rate_limit"] += 1
+        elif re.search(r"Startup cooldown: .* skipping \S+/\S+", line):
+            counts["blocked_cooldown"] += 1
+    return counts

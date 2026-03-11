@@ -19,6 +19,8 @@ def generate_two_hour_report(
     signals = log_metrics["signals"]
     allocations = log_metrics["allocations"]
     health = log_metrics["health"]
+    predictions = log_metrics.get("predictions", {})
+    signal_aggregator = log_metrics.get("signal_aggregator", {})
 
     # --- Header ---
     lines.append(f"# 2-Hour Report — {date_str} {window_start} to {window_end}")
@@ -126,6 +128,32 @@ def generate_two_hour_report(
             )
     else:
         lines.append("No pair activity in this window.")
+    lines.append("")
+
+    # --- Prediction & Signal Summary ---
+    lines.append("## Prediction & Signal Summary")
+    if predictions:
+        agg = signal_aggregator
+        lines.append(
+            f"- Aggregator: approved={agg.get('approved', 0)} "
+            f"| blocked_rate_limit={agg.get('blocked_rate_limit', 0)} "
+            f"| blocked_aggregator={agg.get('blocked_aggregator', 0)} "
+            f"| blocked_cooldown={agg.get('blocked_cooldown', 0)}"
+        )
+        lines.append("")
+        lines.append("| Pair | Candles | Avg Pred% | Above 1.0% | Approved | do_predict |")
+        lines.append("|---|---|---|---|---|---|")
+        for pair in sorted(predictions.keys()):
+            p = predictions[pair]
+            lines.append(
+                f"| {pair} | {p['candles']} "
+                f"| {p['avg_pred_pct']:+.2f}% "
+                f"| {p['above']} "
+                f"| - "
+                f"| {p['last_do_predict']} |"
+            )
+    else:
+        lines.append("No prediction data in this window.")
     lines.append("")
 
     # --- Model Training Summary ---

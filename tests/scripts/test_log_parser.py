@@ -144,3 +144,42 @@ def test_predictions_key_present_in_return_dict():
     result = parse_log_content("")
     assert "predictions" in result
     assert "signal_aggregator" in result
+
+SAMPLE_SIGNAL_AGGREGATOR_LOG = """\
+2026-03-11 19:00:02,537 - AICryptoStrategy - INFO - Signal aggregator approved XRP/USDT entry: confidence=0.7500, sources=['freqai_ml']
+2026-03-11 19:00:05,760 - AICryptoStrategy - INFO - Signal aggregator blocked SOL/USDT entry: direction=HOLD, confidence=0.4000, sources=['freqai_ml']
+2026-03-11 20:00:03,100 - AICryptoStrategy - INFO - Rate limit: 3 entries in last hour >= limit 3, skipping BTC/USDT
+2026-03-11 20:00:04,200 - AICryptoStrategy - INFO - Rate limit: 3 entries in last hour >= limit 3, skipping ETH/USDT
+2026-03-11 20:01:00,000 - AICryptoStrategy - INFO - Startup cooldown: 3 open trades >= limit 3, skipping AVAX/USDT
+"""
+
+
+def test_parse_signal_aggregator_approved():
+    result = parse_log_content(SAMPLE_SIGNAL_AGGREGATOR_LOG)
+    agg = result["signal_aggregator"]
+    assert agg["approved"] == 1
+
+
+def test_parse_signal_aggregator_blocked_aggregator():
+    result = parse_log_content(SAMPLE_SIGNAL_AGGREGATOR_LOG)
+    agg = result["signal_aggregator"]
+    assert agg["blocked_aggregator"] == 1
+
+
+def test_parse_signal_aggregator_blocked_rate_limit():
+    result = parse_log_content(SAMPLE_SIGNAL_AGGREGATOR_LOG)
+    agg = result["signal_aggregator"]
+    assert agg["blocked_rate_limit"] == 2
+
+
+def test_parse_signal_aggregator_blocked_cooldown():
+    result = parse_log_content(SAMPLE_SIGNAL_AGGREGATOR_LOG)
+    agg = result["signal_aggregator"]
+    assert agg["blocked_cooldown"] == 1
+
+
+def test_parse_signal_aggregator_zeros_when_no_lines():
+    result = parse_log_content("2026-03-11 - INFO - heartbeat\n")
+    agg = result["signal_aggregator"]
+    assert agg == {"approved": 0, "blocked_aggregator": 0,
+                   "blocked_rate_limit": 0, "blocked_cooldown": 0}
