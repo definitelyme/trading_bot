@@ -31,6 +31,18 @@ else
     echo "Installed: daily report at 23:59"
 fi
 
+# Re-read after potential update
+EXISTING=$(crontab -l 2>/dev/null || true)
+
+DB_EXPORT_ENTRY="55 23 * * * $PROJECT_DIR/scripts/export-db.sh >> $PROJECT_DIR/logs/rotation.log 2>&1"
+
+if echo "$EXISTING" | grep -q "export-db.sh"; then
+    echo "DB export cron already installed."
+else
+    echo "$EXISTING" | { cat; echo "$DB_EXPORT_ENTRY"; } | crontab -
+    echo "Installed: SQLite export at 23:55"
+fi
+
 echo ""
 echo "Current crontab:"
 crontab -l
