@@ -1,0 +1,22 @@
+{
+    "exchange": {
+        "pair_whitelist": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "AVAX/USDT",
+            "XRP/USDT",
+            "DOGE/USDT",
+            "PEPE/USDT",
+            "SUI/USDT",
+            "WIF/USDT",
+            "NEAR/USDT",
+            "FET/USDT",
+            "HYPE/USDT",
+            "ZRO/USDT",
+            "MORPHO/USDT",
+            "XMR/USDT",
+            "KITE/USDT"
+        ]
+    }
+}

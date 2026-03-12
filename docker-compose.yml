@@ -13,6 +13,7 @@ services:
     command: >
       trade
       --config user_data/config.json
+      --config user_data/config.pairs.json
       --strategy AICryptoStrategy
       --freqaimodel XGBoostRegressor
       --logfile user_data/logs/freqtrade.log

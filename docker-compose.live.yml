@@ -12,4 +12,5 @@ services:
     command: >
       freqtrade trade
       --config user_data/config.live.json
+      --config user_data/config.pairs.json
       --strategy AICryptoStrategy

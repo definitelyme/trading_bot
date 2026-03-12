@@ -16,19 +16,6 @@
         "secret": "",
         "ccxt_config": {},
         "ccxt_async_config": {},
-        "pair_whitelist": [
-            "BTC/USDT",
-            "ETH/USDT",
-            "SOL/USDT",
-            "AVAX/USDT",
-            "XRP/USDT",
-            "DOGE/USDT",
-            "PEPE/USDT",
-            "SUI/USDT",
-            "WIF/USDT",
-            "NEAR/USDT",
-            "FET/USDT"
-        ],
         "pair_blacklist": []
     },
     "pairlists": [
