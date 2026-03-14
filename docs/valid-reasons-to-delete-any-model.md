@@ -6,6 +6,9 @@
 >
 > **ALWAYS archive before deleting. Never delete cold.**
 
+> **⚠️ Dry-run vs Live Config Divergence**
+> `config.json` (dry-run, `docker-compose.yml`) and `config.live.json` (live, `docker-compose.live.yml`) use **different feature parameters** and produce **incompatible models**. The values below reflect the **production (`config.live.json`) feature set**. Switching from dry-run to live trading requires deleting dry-run models and retraining from scratch under the live config.
+
 ---
 
 ## How FreqAI Model Compatibility Works
@@ -51,14 +54,14 @@ These changes make existing models 100% incompatible. The bot will crash or sile
 ### 2. Changing `indicator_periods_candles` in config.json
 
 **Affected config**: `freqai.feature_parameters.indicator_periods_candles`
-**Current value**: `[10, 20]`
+**Current value (production)**: `[10, 20, 50]` — dry-run uses `[10, 20]` (incompatible)
 
-Feature names include the period number: `%-rsi-period_10_...`, `%-rsi-period_20_...`
+Feature names include the period number: `%-rsi-period_10_...`, `%-rsi-period_20_...`, `%-rsi-period_50_...`
 
 **Examples of breaking changes**:
-- `[10, 20]` → `[10, 20, 50]` — adds 50-period features → incompatible
-- `[10, 20]` → `[14, 21]` — changes feature names → incompatible
-- `[10, 20]` → `[20]` — removes 10-period features → incompatible
+- `[10, 20, 50]` → `[10, 20]` — removes 50-period features → incompatible
+- `[10, 20, 50]` → `[14, 21, 50]` — changes feature names → incompatible
+- `[10, 20, 50]` → `[10, 20, 50, 100]` — adds 100-period features → incompatible
 
 ---
 
@@ -95,20 +98,21 @@ Each correlation pair generates features for ALL indicators × ALL periods × AL
 ### 5. Changing `include_shifted_candles` in config.json
 
 **Affected config**: `freqai.feature_parameters.include_shifted_candles`
-**Current value**: `1`
+**Current value (production)**: `2` — dry-run uses `1` (incompatible)
 
-Shifted candles duplicate all features with a `shift-1` suffix. Changing this multiplies or reduces the feature count.
+Shifted candles duplicate all features with a `shift-1` and `shift-2` suffix. Changing this multiplies or reduces the feature count.
 
 **Examples of breaking changes**:
-- `1` → `2` — doubles shifted features → incompatible
-- `1` → `0` — removes all shifted features → incompatible
+- `2` → `1` — halves shifted features → incompatible
+- `2` → `3` — adds another shifted copy → incompatible
+- `2` → `0` — removes all shifted features → incompatible
 
 ---
 
 ### 6. Changing the Target Variable
 
 **Affected code**: `AICryptoStrategy.py` → `set_freqai_targets()`
-**Current target**: `&-price_change = (close[+12] - close) / close`
+**Current target (production)**: `&-price_change = (close[+24] - close) / close` — dry-run uses `close[+12]` (incompatible)
 
 The target column name (`&-price_change`) and formula are baked into the model's label pipeline.
 
@@ -123,12 +127,13 @@ The target column name (`&-price_change`) and formula are baked into the model's
 ### 7. Changing `label_period_candles` in config.json
 
 **Affected config**: `freqai.feature_parameters.label_period_candles`
-**Current value**: `12` (predicts 12 hours ahead on 1h candles)
+**Current value (production)**: `24` (predicts 24 hours ahead on 1h candles) — dry-run uses `12` (incompatible)
 
-This changes `shift(-label_period)` in `set_freqai_targets()`, which changes the actual numerical distribution of the target variable. A model trained to predict 12h returns cannot predict 24h returns.
+This changes `shift(-label_period)` in `set_freqai_targets()`, which changes the actual numerical distribution of the target variable. A model trained to predict 24h returns cannot predict 12h returns.
 
 **Examples of breaking changes**:
-- `12` → `24` — changes prediction horizon from 12h to 24h → models are incompatible
+- `24` → `12` — changes prediction horizon from 24h to 12h → models are incompatible
+- `24` → `48` — changes prediction horizon to 48h → models are incompatible
 
 > While the feature names don't change, the labels the model learned map to a completely different distribution. **Always delete models when changing this value.**
 
@@ -285,4 +290,4 @@ Everything else?                                       → SAFE (but monitor log
 
 ---
 
-*Last updated: 2026-03-14 | Model ID: ai_crypto_v1 | FreqAI: XGBoostRegressor*
+*Last updated: 2026-03-14 | Dry-run model: config.json ([10,20] periods, shifted=1, label=12h) | Live model: config.live.json ([10,20,50] periods, shifted=2, label=24h) | FreqAI: XGBoostRegressor*
