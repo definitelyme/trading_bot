@@ -107,10 +107,10 @@
         "listen_port": 8080,
         "verbosity": "error",
         "enable_openapi": true,
-        "jwt_secret_key": "cd527ad2c38c39005ec27a4b78644ff3680e84a87b10e2db052b22a51bc6ae59",
+        "jwt_secret_key": "",
         "CORS_origins": [],
-        "username": "trader",
-        "password": "change-this-password"
+        "username": "",
+        "password": ""
     },
     "bot_name": "ai_crypto_trader",
     "initial_state": "running",
