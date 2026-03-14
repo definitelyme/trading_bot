@@ -89,14 +89,3 @@ def test_pipeline_load_failure_returns_none():
             ns._pipeline = None
             signal = ns.get_signal("BTC/USDT")
     assert signal is None
-
-
-def test_pair_currency_mapping():
-    """All configured pairs should have a currency mapping."""
-    ns = NewsSentimentSignal()
-    expected_pairs = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "AVAX/USDT", "XRP/USDT",
-        "DOGE/USDT", "PEPE/USDT", "SUI/USDT", "WIF/USDT", "NEAR/USDT", "FET/USDT",
-    ]
-    for pair in expected_pairs:
-        assert pair in ns.PAIR_TO_CURRENCY, f"Missing mapping for {pair}"

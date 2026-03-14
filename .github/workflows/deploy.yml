@@ -1,0 +1,97 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Skip open-trade check and deploy immediately"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Required for Dockerfile change detection
+
+      - name: Detect if Dockerfile changed (needs full image rebuild)
+        id: dockerfile_check
+        run: |
+          if git diff HEAD~1 HEAD --name-only | grep -qE "^Dockerfile$"; then
+            echo "rebuild=true" >> $GITHUB_OUTPUT
+          else
+            echo "rebuild=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build restart args
+        id: restart_args
+        run: |
+          ARGS=""
+          # NOTE: github.event.inputs.force_deploy is empty string (not "false") on push
+          # events. The = "true" comparison handles both cases correctly.
+          if [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+            ARGS="--force"
+          fi
+          if [ "${{ steps.dockerfile_check.outputs.rebuild }}" = "true" ]; then
+            ARGS="$ARGS --rebuild"
+          fi
+          # Trim leading space if only --rebuild is set
+          ARGS="${ARGS# }"
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
+
+      - name: Notify Telegram — deploy starting
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          FORCE="${{ github.event.inputs.force_deploy }}"
+          REBUILD="${{ steps.dockerfile_check.outputs.rebuild }}"
+          NOTE=""
+          if [ "$FORCE" = "true" ]; then
+            NOTE=" [FORCED]"
+          fi
+          if [ "$REBUILD" = "true" ]; then
+            NOTE="$NOTE (image rebuild)"
+          fi
+          MSG="🚀 Deploying: $COMMIT_MSG ($SHORT_SHA)$NOTE"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=$MSG" > /dev/null
+
+      - name: Deploy to VPS via SSH
+        # Pinned to commit SHA — verify at: https://github.com/appleboy/ssh-action/releases/tag/v1.0.3
+        # ACTIONS_URL MUST be in this script: block (not a separate run: step) — it runs on the VPS,
+        # not the GitHub Actions runner.
+        uses: appleboy/ssh-action@4a03da89e5c43da56e502053be254c02e2b6ded5  # v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            export ACTIONS_URL="https://github.com/${{ github.repository }}/actions/workflows/deploy.yml"
+            set -e
+            cd /opt/crypto
+            git pull origin main
+            ./scripts/restart.sh ${{ steps.restart_args.outputs.args }}
+
+      - name: Notify Telegram — deploy succeeded
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=✅ Deployment complete. Bot is running." > /dev/null
+
+      - name: Notify Telegram — deploy failed
+        # Also fires when restart.sh exits 1 due to 4h trade timeout abort.
+        # In that case, restart.sh already sent a specific Telegram message with the force-deploy URL.
+        # This message adds the GitHub Actions link for the run log.
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=❌ Deployment FAILED: $COMMIT_MSG ($SHORT_SHA). Check GitHub Actions." > /dev/null
