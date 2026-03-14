@@ -1,0 +1,15 @@
+{
+  "_note": "Changing ANY value below requires: 1) run scripts/backup-models.sh, 2) change freqai.identifier in config.live.json (e.g. ai_crypto_v2), 3) delete old model directory. See docs/valid-reasons-to-delete-any-model.md",
+  "_dry_run_note": "config.json (dry-run) uses different values ([10,20] periods, shifted=1, label=12h) and produces models INCOMPATIBLE with live models. Do not mix.",
+  "identifier": "ai_crypto_v1",
+  "config_file": "user_data/config.live.json",
+  "timeframes": ["1h", "4h"],
+  "corr_pairs": ["BTC/USDT", "ETH/USDT"],
+  "indicator_periods": [10, 20, 50],
+  "shifted_candles": 2,
+  "label_period_candles": 24,
+  "target_column": "&-price_change",
+  "target_formula": "(close[+24] - close) / close",
+  "model_type": "XGBoostRegressor",
+  "locked_at": "2026-03-14"
+}
