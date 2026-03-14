@@ -1,0 +1,71 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Required for Dockerfile change detection
+
+      - name: Detect if Dockerfile changed (needs full image rebuild)
+        id: dockerfile_check
+        run: |
+          if git diff HEAD~1 HEAD --name-only | grep -qE "^Dockerfile$"; then
+            echo "rebuild=true" >> $GITHUB_OUTPUT
+          else
+            echo "rebuild=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Notify Telegram — deploy starting
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          REBUILD="${{ steps.dockerfile_check.outputs.rebuild }}"
+          REBUILD_NOTE=""
+          if [ "$REBUILD" = "true" ]; then
+            REBUILD_NOTE=" (image rebuild)"
+          fi
+          MSG="🚀 Deploying: $COMMIT_MSG ($SHORT_SHA)$REBUILD_NOTE"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=$MSG" > /dev/null
+
+      - name: Deploy to VPS via SSH
+        # Pinned to commit SHA — verify at: https://github.com/appleboy/ssh-action/releases/tag/v1.0.3
+        uses: appleboy/ssh-action@4a03da89e5c43da56e502053be254c02e2b6ded5  # v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/crypto
+            git pull origin main
+            if [ "${{ steps.dockerfile_check.outputs.rebuild }}" = "true" ]; then
+              echo "Dockerfile changed — full image rebuild..."
+              ./scripts/restart.sh --rebuild
+            else
+              echo "Code/config change — container recreate (no rebuild)..."
+              ./scripts/restart.sh
+            fi
+
+      - name: Notify Telegram — deploy succeeded
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=✅ Deployment complete. Bot is running." > /dev/null
+
+      - name: Notify Telegram — deploy failed
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=❌ Deployment FAILED: $COMMIT_MSG ($SHORT_SHA). Check GitHub Actions." > /dev/null
