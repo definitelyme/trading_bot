@@ -485,11 +485,16 @@ Set up your Mac to automatically pull logs from the VPS. This gives you local ac
 crontab -e
 ```
 
+First, create the local destination folder:
+```bash
+mkdir -p /Users/brendan/Sites/crypto/server-sync-logs
+```
+
 Add these two lines (replace `<VPS_IP>`):
 ```bash
 # Pull VPS logs to Mac every hour — no --delete means local logs are never removed
 # If Mac is offline, rsync just fails silently and catches up next time it runs
-0 * * * * rsync -az deploy@<VPS_IP>:/opt/crypto/logs/ /Users/brendan/Sites/crypto/logs/ >> /tmp/vps-log-sync.log 2>&1
+0 * * * * rsync -az deploy@<VPS_IP>:/opt/crypto/logs/ /Users/brendan/Sites/crypto/server-sync-logs/ >> /tmp/vps-log-sync.log 2>&1
 
 # Also sync the dry-run trade database every hour (for local analysis)
 5 * * * * rsync -az deploy@<VPS_IP>:/opt/crypto/user_data/tradesv3.dryrun.sqlite /Users/brendan/Sites/crypto/user_data/ >> /tmp/vps-log-sync.log 2>&1
