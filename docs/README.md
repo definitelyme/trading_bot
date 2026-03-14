@@ -40,6 +40,7 @@ AI-powered cryptocurrency trading bot using Freqtrade + FreqAI with XGBoost ML m
 - [Monitoring](operations/monitoring.md) — Telegram, web UI, logs
 - [Adding Pairs](operations/adding-pairs.md) — add/remove trading pairs
 - [Going Live](operations/going-live.md) — switch from dry_run to live
+- [VPS Setup](operations/vps-setup.md) — Hetzner provisioning, CI/CD, go-live checklist
 
 ### Debugging
 - [Docker Issues](debugging/docker-issues.md) — build failures, command errors
