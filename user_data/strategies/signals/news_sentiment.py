@@ -21,6 +21,20 @@ class NewsSentimentSignal:
     CRYPTOPANIC_URL = "https://cryptopanic.com/api/free/v1/posts/"
     CACHE_SECONDS = 1800  # cache per pair for 30 minutes
 
+    PAIR_TO_CURRENCY = {
+        "BTC/USDT": "BTC",
+        "ETH/USDT": "ETH",
+        "SOL/USDT": "SOL",
+        "AVAX/USDT": "AVAX",
+        "XRP/USDT": "XRP",
+        "DOGE/USDT": "DOGE",
+        "PEPE/USDT": "PEPE",
+        "SUI/USDT": "SUI",
+        "WIF/USDT": "WIF",
+        "NEAR/USDT": "NEAR",
+        "FET/USDT": "FET",
+    }
+
     def __init__(self, enabled: bool = False, api_key: str = ""):
         self._enabled = enabled
         self._api_key = api_key
