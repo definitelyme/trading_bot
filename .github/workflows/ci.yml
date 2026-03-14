@@ -3,15 +3,37 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  check-paths:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for relevant file changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            relevant:
+              - 'Dockerfile'
+              - 'Dockerfile.test'
+              - 'pyproject.toml'
+              - 'user_data/strategies/**'
+              - 'user_data/freqaimodels/**'
+              - 'user_data/hyperopts/**'
+              - 'tests/**'
+              - '.github/workflows/ci.yml'
+
   test:
+    needs: check-paths
+    if: needs.check-paths.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,3 +53,16 @@ jobs:
 
       - name: Run tests
         run: docker run --rm crypto-test
+
+  ci-gate:
+    needs: [check-paths, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [ "${{ needs.test.result }}" = "failure" ]; then
+            echo "Tests failed"
+            exit 1
+          fi
+          echo "CI passed (tests ran: ${{ needs.check-paths.outputs.relevant == 'true' }})"

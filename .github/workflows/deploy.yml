@@ -3,12 +3,30 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'docker-compose.live.yml'
+      - 'pyproject.toml'
+      - 'FEATURE_LOCK.json'
+      - 'user_data/config.json'
+      - 'user_data/config.live.json'
+      - 'user_data/config.pairs.json'
+      - 'user_data/strategies/**'
+      - 'user_data/freqaimodels/**'
+      - 'user_data/hyperopts/**'
+      - 'scripts/restart.sh'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
       force_deploy:
         description: "Skip open-trade check and deploy immediately"
         type: boolean
         default: false
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false  # Queue deploys; cancelling mid-SSH would orphan the VPS script
 
 jobs:
   deploy:
