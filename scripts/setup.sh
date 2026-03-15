@@ -6,8 +6,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VENV_PYTHON="$PROJECT_DIR/.venv/bin/python3"
-# NOTE (VPS): Before running this script on a VPS, create the venv first:
-#   python3 -m venv "$PROJECT_DIR/.venv" && "$PROJECT_DIR/.venv/bin/pip" install requests
+VENV_PIP="$PROJECT_DIR/.venv/bin/pip"
 
 echo "=== AI Crypto Trader — Setup ==="
 echo ""
@@ -16,6 +15,18 @@ echo ""
 echo "[1/4] Creating directories..."
 mkdir -p "$PROJECT_DIR/logs/reports"
 echo "  ✓ logs/ and logs/reports/"
+
+# 1b. Create Python venv and install dependencies (idempotent)
+echo ""
+echo "[1b/4] Setting up Python venv..."
+if [ ! -f "$VENV_PYTHON" ]; then
+    python3 -m venv "$PROJECT_DIR/.venv"
+    echo "  ✓ Created .venv"
+else
+    echo "  ✓ .venv already exists"
+fi
+"$VENV_PIP" install -q -r "$PROJECT_DIR/scripts/requirements.txt"
+echo "  ✓ Installed dependencies from scripts/requirements.txt"
 
 # 2. Rebuild and restart Docker
 echo ""
