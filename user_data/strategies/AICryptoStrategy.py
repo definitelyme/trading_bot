@@ -228,12 +228,16 @@ class AICryptoStrategy(IStrategy):
         **kwargs,
     ) -> bool:
         """Gate entries through rate limiting and signal aggregation."""
+        # Freqtrade 2026+ passes current_time as a timezone-aware datetime; older versions
+        # passed naive UTC. Normalise to naive UTC once here so all arithmetic is consistent.
+        ct_naive = current_time.replace(tzinfo=None)
+
         # Track bot start time
         if self._bot_start_time is None:
-            self._bot_start_time = current_time
+            self._bot_start_time = ct_naive
 
         # Startup cooldown: limit entries during initial ramp-up
-        hours_since_start = (current_time - self._bot_start_time).total_seconds() / 3600
+        hours_since_start = (ct_naive - self._bot_start_time).total_seconds() / 3600
         if hours_since_start < self._startup_cooldown_hours:
             open_count = len(Trade.get_trades_proxy(is_open=True))
             if open_count >= self._max_entries_per_hour:
@@ -244,11 +248,11 @@ class AICryptoStrategy(IStrategy):
                 return False
 
         # Rate limit: max N new entries per hour
-        # t.open_date is UTC-aware; current_time is naive UTC — strip tzinfo to compare
+        # Both ct_naive and t.open_date are normalised to naive UTC for comparison.
         open_trades = Trade.get_trades_proxy(is_open=True)
         recent_entries = [
             t for t in open_trades
-            if t.open_date and (current_time - t.open_date.replace(tzinfo=None)).total_seconds() < 3600
+            if t.open_date and (ct_naive - t.open_date.replace(tzinfo=None)).total_seconds() < 3600
         ]
         if len(recent_entries) >= self._max_entries_per_hour:
             logger.info(
