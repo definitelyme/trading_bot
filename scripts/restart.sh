@@ -152,6 +152,10 @@ echo ""
 echo "[2/2] Restarting container..."
 
 docker compose down
+# Wait for Telegram's long-poll session to expire server-side.
+# Without this, the new container starts before the old one's getUpdates
+# request is released, causing Conflict errors in the first ~30s of startup.
+sleep 15
 
 if [ "$REBUILD" = true ]; then
   echo "  Rebuilding image and starting container..."
