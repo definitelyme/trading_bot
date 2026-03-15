@@ -62,13 +62,13 @@
 
 **Symptom**: `strategy_wrapper - ERROR - Unexpected error TypeError("can't subtract offset-naive and offset-aware datetimes") calling confirm_trade_entry`
 
-**Cause**: `current_time` passed by Freqtrade to strategy hooks is a naive UTC `datetime` (no tzinfo). `Trade.open_date` and `Trade.close_date` are stored as timezone-aware UTC datetimes (`tzinfo=timezone.utc`). Subtracting them raises a TypeError.
+**Cause**: In Freqtrade 2026.2+, `current_time` passed to strategy hooks is a **timezone-aware** UTC datetime. `Trade.open_date` is also timezone-aware. The original fix (2026-03-11) only stripped tzinfo from `t.open_date` but left `current_time` aware — so the subtraction still failed when `current_time` was aware.
 
-**Fix** (applied 2026-03-11 in `AICryptoStrategy.py`):
-- `confirm_trade_entry` rate-limit check: use `t.open_date.replace(tzinfo=None)` before subtracting
-- `_refresh_allocator` cutoff filter: use `t.close_date.replace(tzinfo=None)` before comparing
+**Fix** (updated 2026-03-15 in `AICryptoStrategy.py`):
+- Normalise `current_time` to naive UTC at the top of `confirm_trade_entry` via `ct_naive = current_time.replace(tzinfo=None)`, then use `ct_naive` for all arithmetic.
+- This handles both aware and naive inputs (`.replace(tzinfo=None)` is a no-op on already-naive datetimes).
 
-**Impact if unpatched**: `confirm_trade_entry` crashes on pairs when there are already open trades in the same candle cycle. Freqtrade's `strategy_wrapper` catches the exception and **defaults to True** — so trades still open, but the signal aggregator and rate limit are silently bypassed.
+**Impact if unpatched**: `confirm_trade_entry` crashes whenever there are open trades. Freqtrade's `strategy_wrapper` catches the exception and **defaults to True (allow entry)** — so the trade still opens, but ALL safety gates (startup cooldown, rate limit, signal aggregation) are silently bypassed.
 
 ---
 
